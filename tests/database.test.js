@@ -20,7 +20,7 @@ test('database: factory memakai SQLite in-memory untuk test', () => {
   assert.equal(db.driver, 'sqlite');
   assert.equal(db.isMemory, true);
   assert.equal(db.health().ok, true);
-  assert.equal(db.health().schemaVersion, 1);
+  assert.equal(db.health().schemaVersion, 2);
   db.close();
 });
 
@@ -153,7 +153,7 @@ test('database: backup, retensi, dan reopen', async () => {
   const reopened = createSqliteDatabase({ filename });
   assert.equal(reopened.getSetting('hello'), 'world');
   assert.equal(reopened.listAudit(1).length, 1);
-  assert.equal(reopened.health().schemaVersion, 1);
+  assert.equal(reopened.health().schemaVersion, 2);
   reopened.close();
 
   const memory = createSqliteDatabase({ filename: ':memory:' });

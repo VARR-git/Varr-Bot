@@ -2,6 +2,8 @@
 
 Dokumen ini untuk audit internal: apa yang dibangun, kenapa begitu, dan di mana risikonya. Status: **Phase 1 selesai**, 70 test hijau, `npm audit` bersih.
 
+> Catatan: dokumen ini merekam kondisi Phase 1. Phase 2 (`v0.2.0`) menambah migrasi skema **v2**, middleware `banned`, command grup/guard/media/downloader, serta backup/restore; lihat [REVIEW-PHASE2.md](REVIEW-PHASE2.md).
+
 ---
 
 ## 1. Alur Satu Pesan

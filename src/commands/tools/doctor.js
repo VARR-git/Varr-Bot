@@ -99,6 +99,40 @@ module.exports = {
       ? sharp.version
       : ctx.t('doctor.sharpMissing')}`);
 
+    const downloader = ctx.services.downloader;
+    let ytdlp = { available: false, version: null };
+    if (downloader) ytdlp = await downloader.available();
+    lines.push(`${ctx.t('doctor.ytdlp')}: ${ytdlp.available
+      ? ctx.t('doctor.ytdlpOk', { version: ytdlp.version || 'tersedia' })
+      : ctx.t('doctor.ytdlpMissing')}`);
+
+    try {
+      const backups = ctx.db.listBackups({ directory: ctx.config.backupsDir });
+      lines.push(`${ctx.t('doctor.backups')}: ${backups.length > 0
+        ? ctx.t('doctor.backupsOk', { count: backups.length })
+        : ctx.t('doctor.backupsEmpty')}`);
+    } catch (error) {
+      lines.push(`${ctx.t('doctor.backups')}: ${ctx.t('doctor.diskError', { error: error.message })}`);
+    }
+
+    try {
+      const files = fs.readdirSync(ctx.config.tmpDir)
+        .filter((name) => name.startsWith('varr-'));
+      const size = files.reduce((total, name) => {
+        try {
+          return total + fs.statSync(path.join(ctx.config.tmpDir, name)).size;
+        } catch {
+          return total;
+        }
+      }, 0);
+      lines.push(`${ctx.t('doctor.tmp')}: ${ctx.t('doctor.tmpOk', {
+        count: files.length,
+        size: formatBytes(size),
+      })}`);
+    } catch {
+      lines.push(`${ctx.t('doctor.tmp')}: ${ctx.t('doctor.tmpOk', { count: 0, size: '0 B' })}`);
+    }
+
     lines.push(`${ctx.t('doctor.uptime')}: ${formatDuration(ctx.state.uptime())}`);
     lines.push(`${ctx.t('doctor.memory')}: ${formatBytes(process.memoryUsage().rss)}`);
 

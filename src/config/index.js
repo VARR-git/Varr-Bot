@@ -158,6 +158,18 @@ function loadConfig(env = process.env) {
     commandTimeoutMs: numberValue(env.COMMAND_TIMEOUT_MS, 30_000, { min: 1_000, max: 300_000 }),
     defaultCooldown: numberValue(env.COMMAND_COOLDOWN, 3, { min: 0, max: 3_600 }),
     queueMaxPending: numberValue(env.QUEUE_MAX_PENDING, 50, { min: 1, max: 1_000 }),
+    mediaMaxMb: numberValue(env.MEDIA_MAX_MB, 16, { min: 1, max: 100 }),
+    download: {
+      binary: stringValue(env.YTDLP_PATH, 'yt-dlp'),
+      maxMb: numberValue(env.DOWNLOAD_MAX_MB, 16, { min: 1, max: 100 }),
+      maxDurationSec: numberValue(env.DOWNLOAD_MAX_DURATION_SEC, 900, { min: 30, max: 7_200 }),
+      timeoutMs: numberValue(env.DOWNLOAD_TIMEOUT_MS, 120_000, { min: 5_000, max: 600_000 }),
+      concurrency: numberValue(env.DOWNLOAD_CONCURRENCY, 2, { min: 1, max: 4 }),
+      queueMax: numberValue(env.DOWNLOAD_QUEUE_MAX, 10, { min: 1, max: 100 }),
+    },
+    tmpDir: resolveDir(stringValue(env.TMP_DIR, path.join('data', 'tmp'))),
+    backupsDir: resolveDir(stringValue(env.BACKUP_DIR, path.join('data', 'backups'))),
+    backupKeep: numberValue(env.BACKUP_KEEP, 14, { min: 1, max: 100 }),
     rateLimit: {
       max: numberValue(env.RATE_LIMIT_MAX, 20, { min: 1, max: 1_000 }),
       windowMs: numberValue(env.RATE_LIMIT_WINDOW_MS, 60_000, { min: 1_000, max: 3_600_000 }),

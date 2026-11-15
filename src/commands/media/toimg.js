@@ -31,7 +31,11 @@ module.exports = {
     try {
       buffer = await media.download(ctx.sock, found);
     } catch (error) {
-      ctx.logger.warn({ err: error, chat: ctx.chatId }, 'Gagal mengunduh sticker');
+      // Hanya pesan error: objek error Baileys bisa memuat URL CDN.
+      ctx.logger.warn(
+        { error: error.message, chat: ctx.chatId },
+        'Gagal mengunduh sticker',
+      );
       return ctx.t('media.downloadFailed');
     }
 
@@ -42,7 +46,10 @@ module.exports = {
     try {
       image = await media.toImage(buffer, 'png');
     } catch (error) {
-      ctx.logger.warn({ err: error, chat: ctx.chatId }, 'Gagal mengonversi sticker ke gambar');
+      ctx.logger.warn(
+        { error: error.message, chat: ctx.chatId },
+        'Gagal mengonversi sticker ke gambar',
+      );
       return ctx.t('media.convertFailed');
     }
 

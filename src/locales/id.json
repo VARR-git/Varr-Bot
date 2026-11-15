@@ -43,7 +43,8 @@
     "rateLimit": "Terlalu banyak command dalam waktu singkat. Tunggu *{seconds} detik* lagi.",
     "groupOnly": "Command ini hanya bisa dipakai di grup.",
     "privateOnly": "Command ini hanya bisa dipakai di chat pribadi.",
-    "scope": "Command ini tidak bisa dipakai di chat ini."
+    "scope": "Command ini tidak bisa dipakai di chat ini.",
+    "banned": "Kamu diblokir dari memakai bot ini. Hubungi owner kalau merasa ini keliru."
   },
   "commands": {
     "menu": {
@@ -66,6 +67,90 @@
     },
     "maintenance": {
       "description": "Aktifkan atau matikan mode maintenance"
+    },
+    "welcome": {
+      "description": "Atur pesan sambutan anggota baru"
+    },
+    "goodbye": {
+      "description": "Atur pesan perpisahan anggota keluar"
+    },
+    "promote": {
+      "description": "Jadikan anggota sebagai admin grup"
+    },
+    "demote": {
+      "description": "Cabut status admin anggota grup"
+    },
+    "kick": {
+      "description": "Keluarkan anggota dari grup"
+    },
+    "mute": {
+      "description": "Tutup grup (hanya admin yang bisa mengirim pesan)"
+    },
+    "unmute": {
+      "description": "Buka grup agar semua anggota bisa mengirim pesan"
+    },
+    "tagall": {
+      "description": "Mention semua anggota grup"
+    },
+    "hidetag": {
+      "description": "Kirim pesan ke semua anggota tanpa mention terlihat"
+    },
+    "groupinfo": {
+      "description": "Tampilkan informasi grup"
+    },
+    "warn": {
+      "description": "Beri peringatan kepada anggota grup"
+    },
+    "warnings": {
+      "description": "Lihat daftar warning anggota"
+    },
+    "unwarn": {
+      "description": "Hapus semua warning anggota"
+    },
+    "antilink": {
+      "description": "Aktifkan guard tautan di grup"
+    },
+    "antispam": {
+      "description": "Aktifkan guard spam di grup"
+    },
+    "setwarnlimit": {
+      "description": "Atur batas warning sebelum anggota dikeluarkan"
+    },
+    "guardstatus": {
+      "description": "Lihat status guard grup"
+    },
+    "sticker": {
+      "description": "Ubah gambar menjadi sticker"
+    },
+    "toimg": {
+      "description": "Ubah sticker menjadi gambar PNG"
+    },
+    "doctor": {
+      "description": "Cek kesehatan bot, session, dan dependensi"
+    },
+    "ytmp3": {
+      "description": "Unduh audio YouTube (MP3)"
+    },
+    "ytmp4": {
+      "description": "Unduh video YouTube (MP4)"
+    },
+    "tiktok": {
+      "description": "Unduh video TikTok tanpa watermark"
+    },
+    "ban": {
+      "description": "Blokir pengguna atau grup dari bot"
+    },
+    "unban": {
+      "description": "Buka kembali blokir pengguna atau grup"
+    },
+    "stats": {
+      "description": "Tampilkan statistik penggunaan bot"
+    },
+    "backup": {
+      "description": "Buat, daftar, dan verifikasi backup database"
+    },
+    "restore": {
+      "description": "Pulihkan database dari file backup"
     }
   },
   "menu": {
@@ -138,5 +223,203 @@
     "already": "Mode maintenance sudah *{status}*.",
     "invalid": "Gunakan *{prefix}maintenance on* atau *{prefix}maintenance off*.",
     "notice": "Saat maintenance, hanya owner dan command darurat (ping, alive, help, menu) yang bisa dipakai."
+  },
+  "group": {
+    "metadataFailed": "Gagal mengambil metadata grup. Coba lagi nanti.",
+    "noParticipants": "Tidak ada anggota grup yang bisa disebutkan.",
+    "targetMissing": "Sebutkan target: mention, reply pesan, atau tulis nomor.\nContoh: *{prefix}{command} @6281234567890*",
+    "targetNotMember": "Target bukan anggota grup ini.",
+    "targetSelf": "Tidak bisa menargetkan diri sendiri.",
+    "protectedBot": "Tidak bisa menargetkan bot sendiri.",
+    "protectedOwner": "Target adalah owner bot dan dilindungi.",
+    "protectedGroupOwner": "Target adalah pembuat grup dan dilindungi.",
+    "targetAdmin": "Target adalah admin grup. Cabut status adminnya dulu.",
+    "botNotAdmin": "Bot harus menjadi admin grup untuk menjalankan aksi ini.",
+    "reason": "Alasan: {reason}",
+    "kicked": "✅ {user} telah dikeluarkan dari grup.",
+    "warnAdded": "⚠️ {user} mendapat peringatan {count}/{limit}.",
+    "warnKicked": "🚪 {user} dikeluarkan karena mencapai batas {limit} warning.",
+    "warnLimitNoAdmin": "⚠️ {user} mencapai batas {limit} warning, tetapi bot bukan admin sehingga tidak bisa mengeluarkan.",
+    "warningsEmpty": "Tidak ada warning untuk {user} (batas {limit}).",
+    "warningsHeader": "⚠️ Warning {user}: {count}/{limit}",
+    "warningsCleared": "🧹 {count} warning {user} dihapus.",
+    "alreadyAdmin": "{user} sudah menjadi admin.",
+    "targetNotAdmin": "{user} bukan admin grup.",
+    "promoted": "⬆️ {user} sekarang menjadi admin.",
+    "demoted": "⬇️ Status admin {user} dicabut.",
+    "alreadyMuted": "Grup sudah dalam mode hanya admin.",
+    "muted": "🔒 Grup ditutup. Hanya admin yang bisa mengirim pesan.",
+    "alreadyUnmuted": "Grup sudah terbuka untuk semua anggota.",
+    "unmuted": "🔓 Grup dibuka. Semua anggota bisa mengirim pesan.",
+    "tagallDefault": "📢 Pengumuman untuk semua anggota.",
+    "hidetagDefault": "📢 Pengumuman untuk semua anggota.",
+    "message": {
+      "title": "Pengaturan {feature}",
+      "status": "Status: *{status}*",
+      "text": "Teks saat ini:\n{text}",
+      "usingDefault": "_Memakai template default._",
+      "placeholders": "Placeholder: *{name}*, *{number}*, *{mention}*, *{group}*, *{desc}*, *{count}*",
+      "usage": "Contoh: *{prefix}{command} on*, *{prefix}{command} set Halo {mention}*, *{prefix}{command} reset*",
+      "enabled": "{feature} diaktifkan.",
+      "disabled": "{feature} dinonaktifkan.",
+      "reset": "Teks {feature} dikembalikan ke default.",
+      "empty": "Teks tidak boleh kosong.",
+      "tooLong": "Teks terlalu panjang (maksimal {max} karakter).",
+      "saved": "Teks {feature} disimpan."
+    },
+    "info": {
+      "title": "ℹ️ Info {group}",
+      "id": "ID",
+      "created": "Dibuat",
+      "owner": "Pembuat",
+      "members": "Anggota",
+      "admins": "Admin",
+      "messageMode": "Mode pesan",
+      "editMode": "Mode edit",
+      "addMode": "Mode tambah anggota",
+      "botAdmin": "Bot admin",
+      "adminOnly": "hanya admin",
+      "allMembers": "semua anggota",
+      "description": "Deskripsi"
+    }
+  },
+  "guard": {
+    "status": {
+      "title": "🛡️ *Status Guard*",
+      "antilink": "Antilink",
+      "antispam": "Antispam",
+      "warnLimit": "Batas warning",
+      "botAdmin": "Bot admin",
+      "hint": "Atur dengan *{prefix}antilink*, *{prefix}antispam*, dan *{prefix}setwarnlimit*."
+    },
+    "featureStatus": "{feature}: *{status}*",
+    "action": "Aksi: *{action}*",
+    "actionsList": "Aksi tersedia: *delete* (hapus pesan), *warn* (warning), *kick* (keluarkan).",
+    "usage": "Contoh: *{prefix}{command} on*, *{prefix}{command} warn*, *{prefix}{command} off*",
+    "featureEnabled": "{feature} diaktifkan.",
+    "featureDisabled": "{feature} dinonaktifkan.",
+    "actionChanged": "{feature} aktif dengan aksi *{action}*.",
+    "warned": "⚠️ {user} melanggar guard: warning {count}/{limit}.",
+    "kicked": "🚪 {user} dikeluarkan oleh guard ({reason}).",
+    "limitNoAdmin": "⚠️ {user} mencapai batas {limit} warning, tetapi bot bukan admin.",
+    "reasonLink": "tautan",
+    "reasonSpam": "spam",
+    "warnLimitCurrent": "Batas warning saat ini: *{limit}* (rentang {min}-{max}).",
+    "warnLimitInvalid": "Nilai harus angka antara {min} dan {max}.",
+    "warnLimitChanged": "Batas warning diubah menjadi *{limit}*."
+  },
+  "media": {
+    "unavailable": "Fitur media tidak tersedia karena *sharp* belum terpasang.",
+    "stickerUsage": "Kirim gambar dengan caption *{prefix}sticker* atau reply gambar dengan *{prefix}sticker*.",
+    "videoUnsupported": "Video belum didukung untuk sticker. Kirim gambar atau GIF.",
+    "tooLarge": "Ukuran media melebihi batas {max} MB.",
+    "downloadFailed": "Gagal mengunduh media. Coba kirim ulang.",
+    "convertFailed": "Gagal mengonversi media.",
+    "toimgUsage": "Reply sticker dengan *{prefix}toimg*.",
+    "toimgOnlySticker": "Command ini hanya untuk sticker.",
+    "toimgCaption": "🖼️ Hasil konversi sticker."
+  },
+  "downloader": {
+    "unavailable": "Downloader belum siap: *yt-dlp* tidak ditemukan. Owner bisa memasang yt-dlp lalu cek *{prefix}doctor*.",
+    "invalidUrl": "URL tidak valid. Contoh: *{prefix}{command} https://youtu.be/xxxxxxxxxxx*",
+    "unsupportedHost": "Link tidak didukung. Gunakan link {platform}.",
+    "tooLarge": "File terlalu besar; batas {max}.",
+    "tooLong": "Durasi {duration} melebihi batas {max}.",
+    "failed": "Gagal mengunduh media. Coba lagi atau gunakan link lain.",
+    "ffmpegMissing": "FFmpeg belum terpasang, jadi media tidak bisa dikonversi. Owner bisa cek *{prefix}doctor*.",
+    "busy": "Downloader sedang sibuk. Coba lagi sebentar.",
+    "processing": "⏳ Memproses media...",
+    "audioCaption": "🎵 *{title}*\n⏱️ {duration} • {size}",
+    "videoCaption": "🎬 *{title}*\n⏱️ {duration} • {size}",
+    "tiktokCaption": "🎬 *{title}*\n👤 {author}",
+    "noAudio": "Media ini tidak punya audio.",
+    "noVideo": "Media ini tidak punya video.",
+    "titleUnknown": "Tanpa judul",
+    "authorUnknown": "Tidak diketahui",
+    "durationUnknown": "?"
+  },
+  "backup": {
+    "title": "💾 *Backup Database*",
+    "created": "Backup dibuat: *{name}* ({size})",
+    "verified": "Verifikasi: *OK* (skema v{version})",
+    "unverified": "Verifikasi: *gagal* — {error}",
+    "listHeader": "Backup tersedia ({count}):",
+    "listEmpty": "Belum ada backup. Jalankan *{prefix}backup*.",
+    "listItem": "• {name} — {size} ({date})",
+    "verifyHeader": "🔎 Verifikasi *{name}*",
+    "verifyOk": "Integritas: *OK*\nSkema: v{version}\nUkuran: {size}\n{counts}",
+    "verifyFailed": "Backup tidak valid: {error}",
+    "failed": "Backup gagal: {error}",
+    "usage": "Gunakan *{prefix}backup*, *{prefix}backup list*, atau *{prefix}backup verify <nama>*.",
+    "notFound": "Backup tidak ditemukan. Gunakan *{prefix}backup list*.",
+    "restoreUsage": "Gunakan *{prefix}restore <nama> confirm* untuk memulihkan.\nBackup pengaman otomatis dibuat sebelum restore.",
+    "restoreConfirm": "Tambahkan *confirm* di akhir command untuk benar-benar memulihkan data.",
+    "restored": "✅ Restore selesai dari *{name}*.\n{counts}",
+    "restoreFailed": "Restore gagal: {error}",
+    "safetyBackup": "Backup pengaman: *{name}*",
+    "counts": "Data dipulihkan: {counts}",
+    "tableRow": "{table}: {count} baris"
+  },
+  "ban": {
+    "targetMissing": "Sebutkan target user (mention/reply/nomor) atau *group*.\nContoh: *{prefix}ban @6281234567890*",
+    "protected": "Tidak bisa memblokir owner atau bot.",
+    "bannedUser": "🚫 {user} diblokir dari bot.{reason}",
+    "unbannedUser": "✅ {user} bisa memakai bot lagi.",
+    "bannedGroup": "🚫 Grup ini diblokir dari bot.",
+    "unbannedGroup": "✅ Grup ini bisa memakai bot lagi.",
+    "alreadyBanned": "{user} sudah diblokir.",
+    "notBanned": "{user} tidak sedang diblokir.",
+    "reason": " Alasan: {reason}"
+  },
+  "stats": {
+    "title": "📊 *Statistik {bot}*",
+    "commands": "Command diproses",
+    "errors": "Error",
+    "unknown": "Command tidak dikenal",
+    "guard": "Guard ditangani",
+    "users": "Pengguna terdaftar",
+    "groups": "Grup terdaftar",
+    "warnings": "Warning tersimpan",
+    "database": "Database",
+    "databaseValue": "SQLite {size} (skema v{version})",
+    "uptime": "Uptime",
+    "memory": "Memori",
+    "mode": "Mode",
+    "topCommands": "Command terpopuler:",
+    "empty": "Belum ada data.",
+    "topItem": "• {name} — {count}"
+  },
+  "doctor": {
+    "title": "🩺 *Varr Doctor*",
+    "node": "Node.js",
+    "database": "Database",
+    "databaseOk": "SQLite OK (skema v{version}, {size})",
+    "databaseError": "SQLite bermasalah",
+    "session": "Session",
+    "sessionFound": "creds.json ditemukan",
+    "sessionMissing": "creds.json belum ada (belum pairing)",
+    "disk": "Disk",
+    "diskFree": "sisa {free} dari {total}",
+    "diskError": "tidak bisa dibaca ({error})",
+    "ffmpeg": "FFmpeg",
+    "ffmpegOk": "tersedia ({version})",
+    "ffmpegMissing": "tidak ditemukan — audio/video terbatas",
+    "sharp": "sharp",
+    "sharpMissing": "tidak tersedia — sticker/toimg nonaktif",
+    "ytdlp": "yt-dlp",
+    "ytdlpOk": "tersedia ({version})",
+    "ytdlpMissing": "tidak ditemukan — downloader nonaktif",
+    "backups": "Backup",
+    "backupsOk": "{count} file",
+    "backupsEmpty": "belum ada backup",
+    "tmp": "Temporary",
+    "tmpOk": "{count} file ({size})",
+    "uptime": "Uptime",
+    "memory": "Memori"
+  },
+  "groupEvents": {
+    "welcomeDefault": "👋 Selamat datang {mention} di *{group}*!",
+    "goodbyeDefault": "👋 {name} telah keluar dari *{group}*.",
+    "fallbackGroup": "grup ini"
   }
 }

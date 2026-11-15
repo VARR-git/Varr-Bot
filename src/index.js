@@ -7,7 +7,6 @@
  */
 
 const fs = require('node:fs');
-const path = require('node:path');
 
 const { loadConfig } = require('./config');
 const { createBaileysLogger, createLogger } = require('./core/logger');
@@ -22,10 +21,10 @@ const { createGroupMetadataCache } = require('./utils/group');
 const { createGuardService } = require('./services/guard');
 const { createGroupEvents } = require('./services/groupEvents');
 const { createMediaService } = require('./services/media');
+const { createDownloaderService } = require('./services/downloader');
 const { buildHealthReport } = require('./core/health');
 
 const BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1_000;
-const BACKUP_KEEP = 14;
 
 async function main() {
   let config;
@@ -41,8 +40,9 @@ async function main() {
 
   fs.mkdirSync(config.dataDir, { recursive: true });
   fs.mkdirSync(config.authDir, { recursive: true });
+  fs.mkdirSync(config.tmpDir, { recursive: true });
 
-  const backupsDir = path.join(config.dataDir, 'backups');
+  const backupsDir = config.backupsDir;
 
   let db;
   try {
@@ -72,6 +72,7 @@ async function main() {
   const getGroupMetadata = createGroupMetadataCache({ logger });
   const messageCache = createMessageCache();
   const media = createMediaService({ config, logger });
+  const downloader = createDownloaderService({ config, logger });
   const guard = createGuardService({ config, db, logger, getGroupMetadata });
   const groupEvents = createGroupEvents({ config, db, logger, getGroupMetadata });
 
@@ -90,7 +91,7 @@ async function main() {
     db,
     state,
     middlewares,
-    services: { getGroupMetadata, messageCache, guard, media },
+    services: { getGroupMetadata, messageCache, guard, media, downloader },
   });
 
   const connection = createConnection({
@@ -113,6 +114,20 @@ async function main() {
         },
         'Varr-Bot siap',
       );
+
+      // Cek dependency downloader tanpa menahan koneksi.
+      downloader.available().then((status) => {
+        if (status.available) {
+          logger.info({ version: status.version }, 'yt-dlp siap');
+        } else {
+          logger.warn(
+            { binary: downloader.binary, error: status.error },
+            'yt-dlp tidak tersedia; command downloader dinonaktifkan',
+          );
+        }
+      }).catch((error) => {
+        logger.debug?.({ err: error }, 'Gagal memeriksa yt-dlp');
+      });
     },
     onFatal: (error) => {
       logger.fatal({ err: error }, 'Koneksi dihentikan permanen');
@@ -127,7 +142,11 @@ async function main() {
     if (!db?.isOpen || db.isMemory) return;
 
     try {
-      const result = await db.backup({ directory: backupsDir, keep: BACKUP_KEEP });
+      const result = await db.backup({
+        directory: backupsDir,
+        keep: config.backupKeep,
+        verify: reason === 'terjadwal',
+      });
       logger.info(
         { path: result.path, size: result.sizeBytes, removed: result.removed, reason },
         'Backup database selesai',

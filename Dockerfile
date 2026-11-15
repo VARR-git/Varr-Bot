@@ -14,10 +14,13 @@ RUN apt-get update \
 FROM node:22-bookworm-slim
 WORKDIR /app
 
-# FFmpeg disiapkan untuk fitur media di fase berikutnya.
+# FFmpeg untuk konversi audio/video dan yt-dlp untuk downloader Phase 2.
+# Catatan: paket yt-dlp di Debian bookworm bisa tertinggal dari versi terbaru.
+# Jika YouTube/TikTok berubah, perbarui yt-dlp di image:
+#   pip3 install -U yt-dlp  (di dalam container) atau bangun ulang image ini.
 # tzdata agar TZ (mis. Asia/Jakarta) berlaku untuk log dan nama backup.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg tzdata \
+    && apt-get install -y --no-install-recommends ffmpeg tzdata yt-dlp ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production

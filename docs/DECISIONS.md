@@ -1,7 +1,7 @@
 # Keputusan Arsitektur Varr-Bot
 
 **Tanggal:** 15 November 2026  
-**Status:** Diterima untuk Phase 1
+**Status:** Diterima untuk Phase 1 & Phase 2 (skema database v2)
 
 Dokumen ini mencatat keputusan teknis yang sudah disepakati, alasan, dan konsekuensinya.
 
@@ -276,13 +276,108 @@ data/
 
 ---
 
+## ADR-009 — Eskalasi warning memakai kick, bukan mute per anggota
+
+**Keputusan:** pelanggaran guard yang berulang dieskalasi dengan urutan **hapus pesan → warning → kick** saat `warn_limit` tercapai.
+
+**Alasan:**
+
+- API WhatsApp tidak menyediakan mute per anggota. `groupSettingUpdate` hanya bisa menutup seluruh grup (`announcement`), bukan membisukan satu nomor.
+- Membuat "mute" palsu (menghapus setiap pesan anggota tertentu) berarti bot harus memproses dan menghapus semua pesan mereka; itu rapuh, mahal, dan tetap tidak mencegah anggota mengirim.
+- Kick adalah satu-satunya aksi per anggota yang benar-benar didukung, dan mudah dijelaskan ke admin grup.
+
+**Konsekuensi:**
+
+- `.setwarnlimit` menentukan kapan kick dilakukan (default 3, rentang 1–10).
+- `.mute`/`.unmute` tetap ada, tetapi berlaku untuk seluruh grup.
+- Setelah kick, warning anggota tersebut dihapus agar data tidak menumpuk.
+- Warning tetap bisa dipakai manual (`.warn`) tanpa memaksa kick bila `warn_limit` belum tercapai.
+
+---
+
+## ADR-010 — Downloader memakai yt-dlp, bukan API pihak ketiga
+
+**Keputusan:** command `ytmp3`, `ytmp4`, dan `tiktok` memakai binary **yt-dlp** (plus FFmpeg untuk ekstraksi audio), dengan adapter di `src/services/downloader.js`.
+
+**Alasan:**
+
+- Tidak ada API key pihak ketiga yang harus disimpan atau bocor.
+- Satu mesin menangani YouTube dan TikTok, dan siap dipakai untuk sumber lain di Phase 3.
+- yt-dlp memperbaiki perubahan situs sumber jauh lebih cepat daripada scraper buatan sendiri.
+- Perintah dijalankan dengan argumen array (tanpa shell), jadi URL dari chat tidak bisa menjadi command injection.
+
+**Pengamanan:**
+
+- Hanya `http`/`https`, tanpa kredensial di URL, dan port 80/443 saja.
+- Host wajib masuk allowlist platform (`youtube.com`, `youtu.be`, `youtube-nocookie.com`, `tiktok.com` beserta subdomainnya).
+- IP literal, `localhost`, `.local`, `.internal`, dan `.home.arpa` ditolak sebelum yt-dlp dipanggil (mitigasi SSRF).
+- Batas ukuran (`DOWNLOAD_MAX_MB`), durasi (`DOWNLOAD_MAX_DURATION_SEC`), timeout proses, dan jumlah unduhan paralel.
+- File temporary di `TMP_DIR` selalu dihapus; file sisa lebih dari 6 jam dibersihkan saat service dipakai.
+- yt-dlp tidak tersedia → command menjawab dengan pesan jelas dan `.doctor` melaporkannya, bukan crash.
+
+**Konsekuensi:**
+
+- Deployment perlu memasang yt-dlp. Image Docker sudah menyertakannya (paket Debian), tetapi versi Debian bisa tertinggal; dokumentasikan cara memperbarui.
+- Kegagalan situs sumber tetap mungkin; pesan error dibuat ramah dan tidak membocorkan URL ke log.
+- Tidak ada test end-to-end yang benar-benar mengunduh (butuh jaringan + binary); test memakai `runCommand` palsu dan memverifikasi argumen, batas, serta cleanup.
+
+---
+
+## ADR-011 — Backup terverifikasi dan restore in-place
+
+**Keputusan:**
+
+- Setiap backup diverifikasi dengan koneksi **read-only** ke file hasil backup: `PRAGMA integrity_check`, `PRAGMA foreign_key_check`, versi skema, dan jumlah baris tiap tabel.
+- Backup manual dan backup pengaman sebelum restore selalu `verify: true`.
+- Restore dilakukan **in-place** lewat `ATTACH DATABASE` lalu menyalin isi tabel di dalam satu transaksi. Tidak perlu restart.
+
+**Alasan:**
+
+- Backup yang tidak pernah diuji restore adalah asumsi, bukan jaminan. Verifikasi menangkap file rusak/terpotong sebelum dipakai.
+- Menutup database saat restore tidak mungkin dilakukan dari dalam command (handler masih memakai koneksi yang sama).
+- `ATTACH` + transaksi memberi hasil atomik: bila gagal di tengah jalan, data lama tetap utuh.
+- Restore hanya menerima skema yang sama persis; menurunkan/menaikkan skema di luar migrasi akan membuat data tidak konsisten.
+
+**Konsekuensi:**
+
+- Tabel `migrations` tidak ikut dipulihkan; skema aktif tidak boleh berubah karena file backup.
+- Restore mengganti isi tabel, termasuk `audit_logs`, lalu mencatat aksi restore di atas data hasil restore.
+- State runtime (mode/maintenance di memori) tidak ikut berubah sampai restart; nilai di database sudah benar.
+- Backup masih belum terenkripsi (direncanakan di Phase 5).
+
+---
+
+## ADR-012 — Model ban: pengguna dan grup, terpisah dari premium
+
+**Keputusan:**
+
+- Ban disimpan di kolom `users.is_banned` dan `groups.is_banned` (kolom grup sudah ada sejak skema v1; skema v2 menambah alasan dan waktu ban).
+- Middleware `banned` berjalan setelah `normalize` dan sebelum `maintenance`.
+- Owner selalu lolos. Grup yang di-ban **diabaikan tanpa balasan**; pengguna yang di-ban dibalas sekali per 10 menit.
+- `.ban`/`.unban` menerima mention, reply, nomor, atau kata kunci `group`/`grup`. Owner dan bot tidak bisa di-ban.
+
+**Alasan:**
+
+- Ban adalah kill switch kasar untuk penyalahgunaan; ia harus bekerja sebelum aturan lain agar tidak bisa diakali.
+- Membalas grup yang di-ban setiap pesan akan menciptakan spam baru; diam lebih aman.
+- Pengguna perlu tahu alasannya, tetapi notifikasi dibatasi agar tidak menjadi loop.
+- Menyimpan ban di tabel yang sama dengan data pengguna membuat satu query murah per pesan dan ikut ter-backup.
+
+**Konsekuensi:**
+
+- Migrasi v2 melakukan `ALTER TABLE` pada `users` dan `groups`; database lama otomatis naik versi saat startup.
+- Ban bersifat per varian JID: command memblokir semua varian yang terdeteksi (PN/LID) agar tidak bisa diakali dengan domain lain.
+- Middleware fail-open: bila query DB gagal, bot tetap melayani (dengan log warning) daripada mati total.
+
+---
+
 ## Ringkasan Keputusan
 
 | Topik | Keputusan |
 |---|---|
 | Lisensi | MIT |
 | Deploy | Docker + Pterodactyl |
-| Database awal | SQLite (`data/varr.db`) |
+| Database awal | SQLite (`data/varr.db`), skema **v2** |
 | Database scale | MySQL panel Pterodactyl / PostgreSQL terpisah |
 | AI utama | Gemini 4 Hydrogen (free tier) |
 | AI fallback | Gemini 3.8 Flash, Groq gpt-oss-120b, OpenRouter Nemotron 3 Ultra free |
@@ -290,3 +385,7 @@ data/
 | STT | Groq Whisper large-v3 |
 | Runtime | Node.js 22 LTS, CommonJS |
 | Session | Baileys multi-file di volume persisten |
+| Eskalasi guard | warning → kick (ADR-009) |
+| Mesin downloader | yt-dlp + FFmpeg (ADR-010) |
+| Backup | terverifikasi + restore in-place (ADR-011) |
+| Ban | tabel user & grup, middleware setelah normalize (ADR-012) |

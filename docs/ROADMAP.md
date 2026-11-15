@@ -131,29 +131,36 @@ Folder `services/`, `events/`, `plugins/`, dan driver `mysql.js` akan ditambahka
 
 ---
 
-### Phase 2 — Grup, Guard, Media Dasar (P0/P1)
+### Phase 2 — Grup, Guard, Media Dasar (P0/P1) ✅
 
 **Tujuan:** fitur yang paling sering dipakai bot WhatsApp.
 
-**Deliverables:**
+**Deliverables (selesai):**
 
-- Grup: welcome, goodbye, promote, demote, kick, mute/unmute, tagall, hidetag, groupinfo, warn, warnings.
-- Guard: antilink, antispam, setwarnlimit, guardstatus, escalation warning → mute → kick.
-- Media: sticker, toimg.
-- Downloader: ytmp3, ytmp4, tiktok.
-- Database grup: settings, warnings, guard rules.
-- `.doctor` versi dasar: cek FFmpeg, disk, session, DB.
-- Restore backup SQLite + verifikasi backup.
-- Validasi `docker build` dan deployment Pterodactyl.
+- Grup: welcome, goodbye, promote, demote, kick, mute/unmute, tagall, hidetag, groupinfo, warn, warnings, unwarn.
+- Guard: antilink, antispam, setwarnlimit, guardstatus, eskalasi warning → kick.
+- Media: sticker (gambar → WebP), toimg (sticker → PNG).
+- Downloader: ytmp3, ytmp4, tiktok memakai yt-dlp + FFmpeg, dengan allowlist host (anti-SSRF), batas ukuran/durasi, timeout, queue, dan cleanup file temporary.
+- Database grup: settings, warnings, guard rules, plus migrasi skema v2 untuk ban.
+- `.doctor` dasar diperluas: FFmpeg, sharp, yt-dlp, disk, session, DB, backup, tmp.
+- Backup SQLite terverifikasi + restore in-place tanpa restart (`.backup`, `.restore`).
+- `.ban` / `.unban` (pengguna & grup), `.stats`, middleware `banned`.
+- i18n ID/EN lengkap untuk semua command Phase 2 + test penjaga drift key.
+- Test: 142 hijau (grup, guard, media, downloader, backup, ban, locale, middleware, handler).
+
+**Deviasi dari rencana awal:**
+
+- Eskalasi guard memakai **warning → kick**, bukan warning → mute → kick. WhatsApp tidak menyediakan mute per anggota; lihat ADR-009. `.mute` tetap ada untuk menutup seluruh grup.
+- Downloader memakai binary **yt-dlp** (bukan API pihak ketiga) supaya tidak ada API key dan tidak bergantung pada satu situs scraper; lihat ADR-010.
 
 **Definition of done:**
 
-- Semua command grup hanya bisa dipakai admin (kecuali owner).
-- Guard tidak memicu false positive pada admin.
-- File temporary dibersihkan setelah konversi/download.
-- Ada batas ukuran file dan timeout.
-- `docker build` berhasil.
-- Backup bisa di-restore di environment bersih.
+- ✅ Semua command grup hanya bisa dipakai admin (kecuali owner).
+- ✅ Guard tidak memicu false positive pada admin/owner.
+- ✅ File temporary dibersihkan setelah konversi/download.
+- ✅ Ada batas ukuran file, durasi, dan timeout.
+- ⏳ `docker build` belum dijalankan di mesin dengan Docker (arsitektur image sudah disesuaikan: FFmpeg + yt-dlp + sharp).
+- ✅ Backup bisa di-restore; prosedur dan verifikasi tercakup test.
 
 ---
 
@@ -306,10 +313,9 @@ Detail alasan dan konsekuensi ada di [DECISIONS.md](DECISIONS.md).
 
 ## 7. Langkah Berikutnya
 
-Phase 1 sudah selesai. Urutan berikutnya:
+Phase 1 dan Phase 2 sudah selesai. Urutan berikutnya:
 
-1. Verifikasi koneksi QR/pairing di server/Pterodactyl dengan nomor uji.
+1. Jalankan sekali dengan nomor uji untuk memverifikasi QR/pairing, command grup, guard, dan downloader nyata (butuh nomor uji + yt-dlp).
 2. Validasi `docker build` di mesin yang punya Docker.
-3. Mulai **Phase 2**: welcome/goodbye, kick/promote/demote, warning, guard dasar, sticker.
-4. Tambahkan test untuk setiap command grup dan guard.
-5. Lanjut ke Phase 3 (AI) setelah fitur grup stabil.
+3. Mulai **Phase 3**: AI multi-provider, Varr Memory, media lanjutan (tomp3, topdf, ocr, tts, qr), downloader tambahan (ig, fb, x, threads, pinterest, spotify).
+4. Tambahkan test provider AI dengan mock HTTP dan budget guard.

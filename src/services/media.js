@@ -6,13 +6,26 @@
  * belum didukung karena membutuhkan FFmpeg.
  */
 
-const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+const { DEF_MEDIA_HOST, downloadMediaMessage } = require('@whiskeysockets/baileys');
 const { getContextInfo } = require('../utils/group');
 const { unwrapMessage } = require('../utils/text');
 
 const STICKER_DIMENSION = 512;
 const DEFAULT_MAX_MB = 16;
 const MEDIA_KEYS = ['imageMessage', 'videoMessage', 'stickerMessage'];
+
+/**
+ * Host media resmi WhatsApp.
+ *
+ * Baileys rc13 menyusun ulang URL download dari `directPath` tetapi memakai
+ * host dari field `url`. Sebagian pesan (sticker dari WhatsApp Web/Desktop)
+ * membawa `url` dengan host usang `a.whatsapp.net`, sehingga download gagal
+ * dengan `getaddrinfo ENOTFOUND a.whatsapp.net`. Dengan mengirim `host`
+ * eksplisit, Baileys memakai host media default dan mengabaikan host usang.
+ *
+ * Ref: https://github.com/WhiskeySockets/Baileys/pull/2778
+ */
+const MEDIA_HOST = DEF_MEDIA_HOST || 'mmg.whatsapp.net';
 
 /**
  * @param {object} content
@@ -118,7 +131,9 @@ function createMediaService({
     const context = typeof sock?.updateMediaMessage === 'function'
       ? { logger, reuploadRequest: sock.updateMediaMessage }
       : undefined;
-    return downloader(found.message, 'buffer', {}, context);
+
+    // `host` wajib: lihat komentar MEDIA_HOST (bug host usang Baileys).
+    return downloader(found.message, 'buffer', { host: MEDIA_HOST }, context);
   }
 
   /**
@@ -163,6 +178,7 @@ function createMediaService({
 module.exports = {
   STICKER_DIMENSION,
   DEFAULT_MAX_MB,
+  MEDIA_HOST,
   mediaKind,
   mediaSize,
   createMediaService,

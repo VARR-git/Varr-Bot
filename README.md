@@ -2,7 +2,7 @@
 
 Bot WhatsApp modular berbasis [Baileys](https://github.com/WhiskeySockets/Baileys) untuk kebutuhan grup, produktivitas, media, AI, dan otomasi. Varr-Bot dirancang agar mudah dirawat, aman dipakai, dan gampang ditambah fitur baru lewat sistem plugin.
 
-> **Status:** **Phase 1 — fondasi selesai** (`v0.1.0`). Struktur `src/`, config, logger, registry command, middleware (permission/cooldown/rate limit/mode/maintenance), SQLite, QR & pairing, serta command dasar sudah tersedia. Fitur lain di bawah masih dalam rencana implementasi.
+> **Status:** **Phase 2 — grup, guard, media & downloader selesai** (`v0.2.0`). Fondasi Phase 1 tetap dipakai; Phase 2 menambah 28 command (total 35) untuk grup, guard, media, downloader, backup & restore terverifikasi, ban/unban, `.stats`, serta migrasi database v2. 142 test hijau.
 
 ## Kenapa Varr-Bot?
 
@@ -23,36 +23,36 @@ Varr-Bot mengambil **ide dan pola terbaik** dari bot-bot populer, lalu dibangun 
 - **Observable** — log terstruktur, statistik command, dan health check.
 - **Portable** — jalan di Windows, Linux, VPS, Docker, PM2, dan Termux.
 
-## Fitur yang Direncanakan
+## Fitur
 
-Ringkasan kategori (detail lengkap ada di [docs/FEATURES.md](docs/FEATURES.md)):
+Ringkasan kategori (detail lengkap ada di [docs/FEATURES.md](docs/FEATURES.md)). ✅ = sudah ada di `v0.2.0`, ⏳ = fase berikutnya.
 
-| Kategori | Contoh fitur |
-|---|---|
-| Core & UX | Menu per kategori, help, ping, runtime, AFK, multi-bahasa, prefix fleksibel |
-| Manajemen grup | Welcome/goodbye, promote/demote, kick, mute, tagall, group info, warning |
-| Varr Guard | Anti-link, anti-spam, anti-badword, anti-tagall, anti-bot, anti-call, anti-delete |
-| Downloader | YouTube, TikTok, Instagram, Facebook, X/Twitter, Threads, Pinterest, Spotify, MediaFire |
-| Sticker & media | Sticker maker, crop, meme, brat, emoji mix, to MP3/PDF/image, OCR, remove background |
-| AI | Multi-provider free-first (Gemini, Groq, OpenRouter), chatbot, vision, TTS, image generation |
-| Utility | Cuaca, berita, Wikipedia, lyrics, GitHub, kurs, kalkulator, QR, screenshot web |
-| Economy & games | Daily reward, bank, level, rank, RPG, mini games, giveaway |
-| Automation | Reminder, scheduler, broadcast, auto-download, auto-sticker, auto-reply, status reaction |
-| Owner & system | Ban/unban, premium, limit, backup/restore, plugin manager, audit log, Varr Doctor |
-| Scale (lanjutan) | Jadibot multi-session, REST API, web dashboard, plugin store |
+| Kategori | Contoh fitur | Status |
+|---|---|---|
+| Core & UX | Menu per kategori, help, ping, multi-bahasa, prefix fleksibel | ✅ |
+| Manajemen grup | Welcome/goodbye, promote/demote, kick, mute, tagall, hidetag, group info, warning | ✅ |
+| Varr Guard | Anti-link, anti-spam, batas warning, eskalasi warning → kick, guard status | ✅ |
+| Sticker & media | Sticker maker, sticker → gambar | ✅ |
+| Downloader | YouTube MP3/MP4, TikTok tanpa watermark | ✅ |
+| Owner & system | Ban/unban, mode, maintenance, stats, backup & restore, Varr Doctor | ✅ |
+| AI | Multi-provider free-first (Gemini, Groq, OpenRouter), chatbot, vision | ⏳ Phase 3 |
+| Utility | Cuaca, berita, Wikipedia, lyrics, kalkulator, QR | ⏳ Phase 3 |
+| Economy & games | Daily reward, bank, level, rank, RPG, mini games | ⏳ Phase 4 |
+| Automation | Reminder, scheduler, broadcast, auto-reply | ⏳ Phase 4 |
+| Scale (lanjutan) | Jadibot multi-session, REST API, web dashboard | ⏳ Phase 5 |
 
-Beberapa fitur pembeda yang akan ditambahkan:
+Beberapa fitur pembeda yang sudah ada atau akan ditambahkan:
 
-- **Varr Doctor** — diagnosa kesehatan bot, session, API key, database, dan dependency.
-- **Varr Guard** — moderasi berbasis severity (warn → mute → kick), bukan sekadar on/off.
-- **Varr Memory** — memori AI per chat dengan consent dan TTL.
-- **Varr Insights** — statistik pemakaian tanpa menyimpan isi pesan.
-- **Varr SafeMode** — dry-run dan konfirmasi untuk command berbahaya.
-- **Plugin manifest** — permission, cooldown, alias, dan hot reload tanpa restart.
-- **AI budget guard** — kuota token per user/chat dan fallback provider otomatis.
-- **Privacy-first retention** — cache anti-delete dan log dibatasi serta bisa dimatikan.
+- **Varr Doctor** ✅ — diagnosa kesehatan bot, session, database, disk, FFmpeg, sharp, yt-dlp.
+- **Varr Guard** ✅ — moderasi berbasis severity (delete → warn → kick), bukan sekadar on/off.
+- **Plugin manifest** ✅ — permission, cooldown, alias, scope, dan file bantuan `_*.js`.
+- **Backup terverifikasi** ✅ — backup SQLite dicek integritasnya dan bisa dipulihkan tanpa restart.
+- **Varr Memory**, **Varr Insights**, **Varr SafeMode**, **AI budget guard** — direncanakan di fase berikutnya.
 
-## Command Dasar
+
+## Command
+
+### Umum & owner
 
 | Command | Akses | Fungsi |
 |---|---|---|
@@ -63,12 +63,59 @@ Beberapa fitur pembeda yang akan ditambahkan:
 | `.owner` | semua | Kontak owner |
 | `.mode [public\|private\|self]` | owner | Ubah mode bot tanpa restart |
 | `.maintenance [on\|off]` | owner | Blokir command non-darurat saat maintenance |
+| `.ban <@user\|reply\|nomor\|group> [alasan]` | owner | Blokir pengguna/grup dari bot |
+| `.unban <@user\|reply\|nomor\|group>` | owner | Buka kembali blokir |
+| `.stats` | owner | Statistik command, pengguna, grup, warning, DB |
+| `.backup [list\|verify <nama>]` | owner | Buat/daftar/verifikasi backup terverifikasi |
+| `.restore <nama\|latest> confirm` | owner | Pulihkan database dari backup |
+| `.doctor` | owner | Cek session, database, disk, FFmpeg, sharp, yt-dlp |
+
+### Grup (admin grup atau owner)
+
+| Command | Fungsi |
+|---|---|
+| `.welcome [on\|off\|set <teks>\|reset]` | Sambutan anggota baru; placeholder `{name}`, `{mention}`, `{group}`, `{desc}`, `{count}` |
+| `.goodbye [on\|off\|set <teks>\|reset]` | Pesan perpisahan anggota keluar |
+| `.promote` / `.demote` | Jadikan / cabut admin |
+| `.kick` | Keluarkan anggota (bot harus admin) |
+| `.mute` / `.unmute` | Tutup / buka grup |
+| `.tagall` / `.hidetag` | Mention semua anggota / mention tersembunyi |
+| `.groupinfo` | Info grup, admin, mode pesan |
+| `.warn` / `.warnings` / `.unwarn` | Kelola warning dan lihat riwayatnya |
+
+### Varr Guard (admin grup atau owner)
+
+| Command | Fungsi |
+|---|---|
+| `.antilink [on\|off\|delete\|warn\|kick]` | Guard tautan |
+| `.antispam [on\|off\|delete\|warn\|kick]` | Guard flood & pesan berulang |
+| `.setwarnlimit <1-10>` | Batas warning sebelum anggota dikeluarkan |
+| `.guardstatus` | Ringkasan aturan guard aktif |
+
+Admin grup dan owner selalu dikecualikan dari guard. Eskalasi: warning → keluarkan saat batas tercapai (WhatsApp tidak punya mute per anggota; lihat ADR-009).
+
+### Media & downloader
+
+| Command | Fungsi |
+|---|---|
+| `.sticker` | Gambar/GIF → sticker WebP |
+| `.toimg` | Sticker → gambar PNG |
+| `.ytmp3 <url>` | Audio YouTube → MP3 |
+| `.ytmp4 <url>` | Video YouTube → MP4 |
+| `.tiktok <url>` | Video TikTok tanpa watermark |
+
+Downloader memakai **yt-dlp** + **FFmpeg**. Batas ukuran, durasi, timeout, dan jumlah unduhan paralel bisa diatur lewat `.env`. Jika yt-dlp tidak terpasang, command memberi tahu dan `.doctor` melaporkannya.
 
 Mode: **public** = semua orang, **private** = owner + admin grup, **self** = owner saja.
 
 ## Menjalankan
 
-Prasyarat: **Node.js 20+** (Docker memakai Node.js 22 LTS).
+Prasyarat:
+
+- **Node.js 20+** (Docker memakai Node.js 22 LTS).
+- **yt-dlp** di `PATH` (atau `YTDLP_PATH`) untuk command downloader.
+- **FFmpeg** untuk konversi audio/video (`ytmp3` butuh ini).
+- **sharp** terpasang otomatis lewat `npm install` (dipakai sticker/toimg).
 
 ```bash
 npm install
@@ -82,11 +129,24 @@ Isi minimal `OWNER_NUMBERS` di `.env`. Untuk login:
 - **QR Code** — biarkan `LOGIN_METHOD` kosong dan `PAIRING_NUMBER` kosong, lalu scan QR di terminal.
 - **Pairing Code** — isi `PAIRING_NUMBER=628xxxxxxxxxx` (dengan kode negara), jalankan bot, lalu masukkan kode 8 digit di WhatsApp → Perangkat tertaut.
 
-Session disimpan di `auth_info_baileys/`, database di `data/varr.db`. Jangan commit keduanya.
+Session disimpan di `auth_info_baileys/`, database di `data/varr.db`, backup di `data/backups/`, file sementara downloader di `data/tmp/`. Jangan commit semuanya.
 
 ```bash
 npm test
 ```
+
+### Backup & restore
+
+Backup otomatis berjalan setiap 24 jam dan saat shutdown, dengan retensi `BACKUP_KEEP` (default 14).
+
+```text
+.backup                          # buat backup + verifikasi integritas
+.backup list                     # daftar backup
+.backup verify latest            # cek integritas + skema + jumlah baris
+.restore latest confirm          # pulihkan (backup pengaman dibuat dulu)
+```
+
+Restore dilakukan **in-place** (tanpa restart) lewat `ATTACH DATABASE` di dalam satu transaksi, dan hanya menerima backup dengan versi skema yang sama.
 
 ### Docker
 
@@ -99,6 +159,7 @@ docker logs -f varr-bot
 Catatan:
 
 - Container membaca config dari `.env` lewat `env_file`. Tanpa `.env`, bot tetap jalan tetapi tanpa owner.
+- Image sudah berisi FFmpeg dan yt-dlp. Jika downloader tiba-tiba gagal setelah situs sumber berubah, perbarui yt-dlp di image lalu bangun ulang.
 - `auth_info_baileys/` dan `data/` di-mount sebagai volume. Di Linux, pastikan folder host bisa ditulis user container (UID 1000): `sudo chown -R 1000:1000 auth_info_baileys data`.
 - `restart: on-failure:5` mencegah crash-loop tanpa henti saat sesi logout. Jika session mati, hapus `auth_info_baileys/` lalu pairing ulang.
 - `docker compose down` mengirim `SIGTERM`; bot menutup socket dan membuat backup sebelum keluar (`stop_grace_period: 30s`).
@@ -114,12 +175,12 @@ Untuk Pterodactyl, baca [docs/DECISIONS.md](docs/DECISIONS.md).
 │   ├── config/index.js       # loader & validasi environment
 │   ├── core/
 │   │   ├── connection.js     # Baileys: QR/pairing, reconnect, graceful shutdown
-│   │   ├── handler.js        # messages.upsert → pipeline command
+│   │   ├── handler.js        # messages.upsert → guard → pipeline command
 │   │   ├── queue.js          # queue eksekusi per chat
 │   │   ├── messageCache.js   # cache pesan untuk getMessage (retry)
 │   │   ├── registry.js       # manifest command + auto-load src/commands
-│   │   ├── middleware/       # normalize, mode, permission, cooldown, rate limit
-│   │   ├── database/         # interface + driver SQLite
+│   │   ├── middleware/       # normalize, banned, maintenance, mode, permission, scope, cooldown, rate limit
+│   │   ├── database/         # interface + driver SQLite (skema v2, backup, restore)
 │   │   ├── state.js          # mode & maintenance runtime
 │   │   ├── health.js         # laporan kesehatan
 │   │   ├── i18n.js           # translator id/en
@@ -127,17 +188,24 @@ Untuk Pterodactyl, baca [docs/DECISIONS.md](docs/DECISIONS.md).
 │   │   └── errors.js         # AppError, timeout
 │   ├── commands/
 │   │   ├── general/          # menu, help, ping, alive, owner
-│   │   └── owner/            # mode, maintenance
+│   │   ├── group/            # welcome, goodbye, promote, demote, kick, mute, tagall, warn, ...
+│   │   ├── guard/            # antilink, antispam, setwarnlimit, guardstatus
+│   │   ├── media/            # sticker, toimg
+│   │   ├── downloader/       # ytmp3, ytmp4, tiktok (+ _shared.js)
+│   │   ├── owner/            # mode, maintenance, ban, unban, stats, backup, restore
+│   │   └── tools/            # doctor
+│   ├── services/             # guard, groupEvents, media, downloader, warnings
 │   ├── locales/              # id.json, en.json
-│   └── utils/                # text, jid, group, format
-├── tests/                    # node:test (config, DB, registry, middleware, handler)
+│   └── utils/                # text, jid, group, groupTarget, groupModeration, backups, ...
+├── tests/                    # node:test (142 test)
 ├── docs/
-├── data/                     # runtime DB + backup (tidak di-commit)
+├── data/                     # runtime DB, backup, tmp (tidak di-commit)
 ├── auth_info_baileys/        # session WhatsApp (tidak di-commit)
 ├── Dockerfile
 ├── docker-compose.yml
 └── package.json
 ```
+
 
 Panduan menambah command ada di [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
@@ -149,6 +217,7 @@ Panduan menambah command ada di [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 - [Keputusan teknis (ADR)](docs/DECISIONS.md)
 - [Panduan development](docs/DEVELOPMENT.md)
 - [Review Phase 1](docs/REVIEW-PHASE1.md)
+- [Review Phase 2](docs/REVIEW-PHASE2.md)
 
 ## Referensi Utama
 

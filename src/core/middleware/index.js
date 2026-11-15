@@ -6,6 +6,7 @@
  */
 
 const { createNormalizeMiddleware } = require('./normalize');
+const { createBannedMiddleware } = require('./banned');
 const { createMaintenanceMiddleware } = require('./maintenance');
 const { createModeMiddleware } = require('./mode');
 const { createPermissionMiddleware } = require('./permission');
@@ -38,7 +39,11 @@ function compose(middlewares) {
 }
 
 /**
- * Urutan default: normalize → maintenance → mode → permission → scope → cooldown → rate limit.
+ * Urutan default: normalize → banned → maintenance → mode → permission →
+ * scope → cooldown → rate limit.
+ *
+ * `banned` sengaja setelah normalize (butuh identitas) dan sebelum maintenance
+ * agar pengguna/grup yang diblokir tidak mendapat balasan otomatis apa pun.
  *
  * @param {object} deps
  * @param {object} deps.config
@@ -51,6 +56,7 @@ function compose(middlewares) {
 function createDefaultMiddlewares({ config, db, state, getGroupMetadata, logger, now }) {
   return [
     createNormalizeMiddleware({ config, db, getGroupMetadata }),
+    createBannedMiddleware({ db, logger, now }),
     createMaintenanceMiddleware({ state }),
     createModeMiddleware({ state }),
     createPermissionMiddleware({ logger }),
@@ -63,6 +69,7 @@ function createDefaultMiddlewares({ config, db, state, getGroupMetadata, logger,
 module.exports = {
   compose,
   createNormalizeMiddleware,
+  createBannedMiddleware,
   createMaintenanceMiddleware,
   createModeMiddleware,
   createPermissionMiddleware,

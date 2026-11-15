@@ -6,12 +6,15 @@
  *
  * Kontrak driver:
  *   getSetting, setSetting, deleteSetting
- *   getUser, ensureUser, setPremium, isPremium, incrementUserCommands
- *   getGroup, ensureGroup, setGroupBanned, incrementGroupCommands
+ *   getUser, ensureUser, setPremium, isPremium, setUserBanned, isUserBanned,
+ *   incrementUserCommands
+ *   getGroup, ensureGroup, setGroupBanned, isGroupBanned, incrementGroupCommands
  *   getGroupSetting, setGroupSetting, deleteGroupSetting
  *   addWarning, getWarnings, countWarnings, clearWarnings
- *   incrementStat, getStat, audit, listAudit
- *   health, backup, close
+ *   incrementStat, getStat, topStats, countUsers, countGroups,
+ *   countAllWarnings, countBannedUsers
+ *   audit, listAudit
+ *   health, backup, listBackups, verifyBackup, restoreBackup, close
  */
 
 const path = require('node:path');

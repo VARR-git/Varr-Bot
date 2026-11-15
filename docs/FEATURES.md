@@ -1,6 +1,20 @@
 # Daftar Fitur Varr-Bot
 
-Dokumen ini adalah **blueprint fitur**. Status implementasi belum dimulai; prioritas ditentukan agar pengembangan tidak melebar.
+Dokumen ini adalah **blueprint fitur**. Prioritas ditentukan agar pengembangan tidak melebar. Status implementasi per `v0.2.0` ada di bagian berikut.
+
+## Status Implementasi
+
+| Fase | Status | Isi |
+|---|---|---|
+| Phase 1 | ✅ selesai | Fondasi: config, logger, registry, middleware, SQLite, QR/pairing, command dasar |
+| Phase 2 | ✅ selesai | Grup, guard, media dasar, downloader (yt/tiktok), backup/restore, ban, stats, doctor |
+| Phase 3 | ⏳ berikutnya | AI multi-provider, memory, media lanjutan, downloader tambahan |
+| Phase 4 | ⏳ rencana | Economy, games, automation, guard tambahan |
+| Phase 5 | ⏳ rencana | Jadibot, REST API, dashboard, plugin store |
+
+Yang **sudah** tersedia: `.menu`, `.help`, `.ping`, `.alive`, `.owner`, `.mode`, `.maintenance`, `.welcome`, `.goodbye`, `.promote`, `.demote`, `.kick`, `.mute`, `.unmute`, `.tagall`, `.hidetag`, `.groupinfo`, `.warn`, `.warnings`, `.unwarn`, `.antilink`, `.antispam`, `.setwarnlimit`, `.guardstatus`, `.sticker`, `.toimg`, `.ytmp3`, `.ytmp4`, `.tiktok`, `.ban`, `.unban`, `.stats`, `.backup`, `.restore`, `.doctor`.
+
+Yang belum: kategori AI, utility/search, economy & games, automation, dan downloader tambahan (IG/FB/X/Threads/Pinterest/Spotify). Item berprioritas P0/P1 lain di bawah tetap menjadi target fase berikutnya.
 
 ## Legenda Prioritas
 

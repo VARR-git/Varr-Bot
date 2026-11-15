@@ -1,6 +1,6 @@
 {
   "name": "varr-bot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Varr-Bot — bot WhatsApp modular berbasis Baileys dengan fokus pada fitur bermanfaat, keamanan, dan maintainability.",
   "main": "src/index.js",
   "private": true,
@@ -25,6 +25,7 @@
     "better-sqlite3": "^12.11.1",
     "dotenv": "^18.0.10",
     "pino": "^10.3.1",
-    "qrcode-terminal": "^0.12.0"
+    "qrcode-terminal": "^0.12.0",
+    "sharp": "^0.35.5"
   }
 }

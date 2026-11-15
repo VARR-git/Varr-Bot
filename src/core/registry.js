@@ -242,6 +242,9 @@ function loadCommands(registry, { directory = DEFAULT_COMMANDS_DIR, logger } = {
 
       if (!entry.isFile() || !entry.name.endsWith('.js')) continue;
 
+      // File bantuan (mis. `_shared.js`) tidak dimuat sebagai command.
+      if (entry.name.startsWith('_') || entry.name.startsWith('.')) continue;
+
       let exported;
       try {
         // eslint-disable-next-line global-require, import/no-dynamic-require

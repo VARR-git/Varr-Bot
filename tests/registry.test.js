@@ -81,10 +81,19 @@ test('registry: memuat command bawaan', () => {
   const registry = new CommandRegistry();
   const loaded = loadCommands(registry);
 
-  assert.equal(loaded.length, 7);
-  assert.equal(registry.size, 7);
+  assert.ok(loaded.length >= 30, `command bawaan kurang lengkap: ${loaded.length}`);
+  assert.equal(registry.size, loaded.length);
 
-  for (const name of ['menu', 'help', 'ping', 'alive', 'owner', 'mode', 'maintenance']) {
+  const expected = [
+    'menu', 'help', 'ping', 'alive', 'owner', 'mode', 'maintenance',
+    'welcome', 'goodbye', 'promote', 'demote', 'kick', 'mute', 'unmute',
+    'tagall', 'hidetag', 'groupinfo', 'warn', 'warnings', 'unwarn',
+    'antilink', 'antispam', 'setwarnlimit', 'guardstatus',
+    'sticker', 'toimg', 'doctor', 'ytmp3', 'ytmp4', 'tiktok',
+    'ban', 'unban', 'stats', 'backup', 'restore',
+  ];
+
+  for (const name of expected) {
     const command = registry.get(name);
     assert.ok(command, `command ${name} harus ada`);
     assert.equal(typeof command.execute, 'function');
@@ -94,7 +103,11 @@ test('registry: memuat command bawaan', () => {
   assert.equal(registry.get('p').name, 'ping');
   assert.equal(registry.get('bantuan').name, 'help');
   assert.equal(registry.get('maint').name, 'maintenance');
+  assert.equal(registry.get('tendang').name, 'kick');
   assert.equal(registry.get('mode').permission, 'owner');
   assert.equal(registry.get('maintenance').permission, 'owner');
+  assert.equal(registry.get('kick').permission, 'admin');
+  assert.equal(registry.get('kick').scope, 'group');
+  assert.equal(registry.get('ytmp3').category, 'downloader');
   assert.equal(registry.get('ping').maintenanceSafe, true);
 });

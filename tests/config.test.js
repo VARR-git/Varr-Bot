@@ -23,10 +23,20 @@ test('config: default values aman', () => {
   assert.equal(config.commandTimeoutMs, 30_000);
   assert.equal(config.defaultCooldown, 3);
   assert.equal(config.queueMaxPending, 50);
+  assert.equal(config.mediaMaxMb, 16);
+  assert.equal(config.download.binary, 'yt-dlp');
+  assert.equal(config.download.maxMb, 16);
+  assert.equal(config.download.maxDurationSec, 900);
+  assert.equal(config.download.timeoutMs, 120_000);
+  assert.equal(config.download.concurrency, 2);
+  assert.equal(config.download.queueMax, 10);
+  assert.equal(config.backupKeep, 14);
   assert.equal(config.rateLimit.max, 20);
   assert.equal(config.rateLimit.windowMs, 60_000);
   assert.ok(path.isAbsolute(config.dataDir));
   assert.ok(path.isAbsolute(config.authDir));
+  assert.ok(path.isAbsolute(config.tmpDir));
+  assert.ok(path.isAbsolute(config.backupsDir));
   assert.deepEqual(VALID_MODES, ['public', 'private', 'self']);
 });
 
@@ -75,6 +85,46 @@ test('config: angka dibatasi ke rentang aman', () => {
 
   const fallback = loadConfig({ COMMAND_COOLDOWN: 'abc' });
   assert.equal(fallback.defaultCooldown, 3);
+});
+
+test('config: pengaturan media, downloader, dan backup', () => {
+  const config = loadConfig({
+    MEDIA_MAX_MB: '8',
+    YTDLP_PATH: '/usr/local/bin/yt-dlp',
+    DOWNLOAD_MAX_MB: '32',
+    DOWNLOAD_MAX_DURATION_SEC: '600',
+    DOWNLOAD_TIMEOUT_MS: '90000',
+    DOWNLOAD_CONCURRENCY: '1',
+    DOWNLOAD_QUEUE_MAX: '3',
+    TMP_DIR: './runtime/tmp',
+    BACKUP_DIR: './runtime/backups',
+    BACKUP_KEEP: '7',
+  });
+
+  assert.equal(config.mediaMaxMb, 8);
+  assert.equal(config.download.binary, '/usr/local/bin/yt-dlp');
+  assert.equal(config.download.maxMb, 32);
+  assert.equal(config.download.maxDurationSec, 600);
+  assert.equal(config.download.timeoutMs, 90_000);
+  assert.equal(config.download.concurrency, 1);
+  assert.equal(config.download.queueMax, 3);
+  assert.equal(config.backupKeep, 7);
+  assert.ok(config.tmpDir.endsWith(path.join('runtime', 'tmp')));
+  assert.ok(config.backupsDir.endsWith(path.join('runtime', 'backups')));
+
+  const clamped = loadConfig({
+    MEDIA_MAX_MB: '0',
+    DOWNLOAD_MAX_MB: '999',
+    DOWNLOAD_MAX_DURATION_SEC: '1',
+    DOWNLOAD_CONCURRENCY: '0',
+    BACKUP_KEEP: '0',
+  });
+
+  assert.equal(clamped.mediaMaxMb, 1);
+  assert.equal(clamped.download.maxMb, 100);
+  assert.equal(clamped.download.maxDurationSec, 30);
+  assert.equal(clamped.download.concurrency, 1);
+  assert.equal(clamped.backupKeep, 1);
 });
 
 test('config: production flag', () => {

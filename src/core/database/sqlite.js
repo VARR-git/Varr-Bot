@@ -84,7 +84,49 @@ const MIGRATIONS = [
       `);
     },
   },
+  {
+    name: 'ban-control',
+    up(db) {
+      db.exec(`
+        ALTER TABLE users ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE users ADD COLUMN ban_reason TEXT;
+        ALTER TABLE users ADD COLUMN banned_at INTEGER;
+        ALTER TABLE groups ADD COLUMN ban_reason TEXT;
+        ALTER TABLE groups ADD COLUMN banned_at INTEGER;
+
+        CREATE INDEX IF NOT EXISTS idx_users_banned ON users (is_banned);
+        CREATE INDEX IF NOT EXISTS idx_groups_banned ON groups (is_banned);
+        CREATE INDEX IF NOT EXISTS idx_stats_value ON stats (value DESC);
+      `);
+    },
+  },
 ];
+
+/**
+ * Tabel yang isinya ikut dipulihkan saat `restoreBackup`. `migrations` sengaja
+ * tidak ikut: skema database aktif tidak boleh diturunkan oleh file backup.
+ */
+const RESTORE_TABLES = Object.freeze([
+  'settings',
+  'users',
+  'groups',
+  'group_settings',
+  'warnings',
+  'stats',
+  'audit_logs',
+]);
+
+const DELETE_ORDER = Object.freeze([
+  'group_settings',
+  'warnings',
+  'audit_logs',
+  'stats',
+  'users',
+  'groups',
+  'settings',
+]);
+
+const BACKUP_NAME_PATTERN = /^[A-Za-z0-9._-]+\.db$/;
 
 /**
  * @param {import('better-sqlite3').Database} db
@@ -128,7 +170,11 @@ function migrate(db, logger) {
  */
 function mapUser(row) {
   if (!row) return null;
-  return { ...row, is_premium: Boolean(row.is_premium) };
+  return {
+    ...row,
+    is_premium: Boolean(row.is_premium),
+    is_banned: Boolean(row.is_banned),
+  };
 }
 
 /**
@@ -201,6 +247,12 @@ function createSqliteDatabase({ filename = ':memory:', logger, now = Date.now } 
       WHERE jid = ? AND is_premium = 1
         AND (premium_until IS NULL OR premium_until > ?)
     `),
+    setUserBanned: db.prepare(`
+      UPDATE users
+      SET is_banned = ?, ban_reason = ?, banned_at = ?, updated_at = ?
+      WHERE jid = ?
+    `),
+    userBanned: db.prepare('SELECT is_banned FROM users WHERE jid = ?'),
     incrementUserCommands: db.prepare(`
       UPDATE users SET command_count = command_count + 1, updated_at = ? WHERE jid = ?
     `),
@@ -215,8 +267,11 @@ function createSqliteDatabase({ filename = ':memory:', logger, now = Date.now } 
         updated_at   = excluded.updated_at
     `),
     setGroupBanned: db.prepare(`
-      UPDATE groups SET is_banned = ?, updated_at = ? WHERE jid = ?
+      UPDATE groups
+      SET is_banned = ?, ban_reason = ?, banned_at = ?, updated_at = ?
+      WHERE jid = ?
     `),
+    groupBanned: db.prepare('SELECT is_banned FROM groups WHERE jid = ?'),
     incrementGroupCommands: db.prepare(`
       UPDATE groups SET command_count = command_count + 1, updated_at = ? WHERE jid = ?
     `),
@@ -246,6 +301,16 @@ function createSqliteDatabase({ filename = ':memory:', logger, now = Date.now } 
         value = value + excluded.value, updated_at = excluded.updated_at
     `),
     getStat: db.prepare('SELECT value FROM stats WHERE key = ?'),
+    topStats: db.prepare(`
+      SELECT key, value FROM stats
+      WHERE key LIKE ?
+      ORDER BY value DESC, key ASC
+      LIMIT ?
+    `),
+    countUsers: db.prepare('SELECT COUNT(*) AS total FROM users'),
+    countGroups: db.prepare('SELECT COUNT(*) AS total FROM groups'),
+    countAllWarnings: db.prepare('SELECT COUNT(*) AS total FROM warnings'),
+    countBannedUsers: db.prepare('SELECT COUNT(*) AS total FROM users WHERE is_banned = 1'),
 
     audit: db.prepare(`
       INSERT INTO audit_logs (actor_jid, action, target, meta, created_at)
@@ -257,6 +322,208 @@ function createSqliteDatabase({ filename = ':memory:', logger, now = Date.now } 
   };
 
   let closed = false;
+
+  /**
+   * @returns {number}
+   */
+  function schemaVersionOf(target = db) {
+    return Number(target.pragma('user_version', { simple: true })) || 0;
+  }
+
+  /**
+   * @param {string} [directory]
+   * @returns {string}
+   */
+  function resolveBackupDirectory(directory) {
+    return directory || path.join(path.dirname(filename), 'backups');
+  }
+
+  /**
+   * @param {{directory?: string, prefix?: string}} [options]
+   * @returns {Array<{name: string, path: string, sizeBytes: number, createdAt: number}>}
+   */
+  function listBackups({ directory, prefix = 'varr' } = {}) {
+    const targetDir = resolveBackupDirectory(directory);
+
+    let entries = [];
+    try {
+      entries = fs.readdirSync(targetDir);
+    } catch {
+      return [];
+    }
+
+    return entries
+      .filter((name) => BACKUP_NAME_PATTERN.test(name) && name.startsWith(`${prefix}-`))
+      .map((name) => {
+        const fullPath = path.join(targetDir, name);
+        try {
+          const stat = fs.statSync(fullPath);
+          return { name, path: fullPath, sizeBytes: stat.size, createdAt: stat.mtimeMs };
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  /**
+   * Verifikasi file backup dengan koneksi read-only: integritas, foreign key,
+   * versi skema, dan jumlah baris tiap tabel.
+   *
+   * @param {string} filePath
+   * @returns {object}
+   */
+  function verifyBackup(filePath) {
+    const target = String(filePath || '');
+    const name = path.basename(target);
+
+    if (!target) return { ok: false, error: 'Path backup kosong.', name, counts: {} };
+
+    let probe = null;
+    try {
+      const sizeBytes = fs.statSync(target).size;
+      probe = new Database(target, { readonly: true, fileMustExist: true });
+
+      const integrity = probe.pragma('integrity_check')
+        .map((row) => String(Object.values(row)[0]));
+      const foreignKeys = probe.pragma('foreign_key_check');
+      const schemaVersion = schemaVersionOf(probe);
+
+      const counts = {};
+      for (const table of RESTORE_TABLES) {
+        try {
+          counts[table] = Number(
+            probe.prepare(`SELECT COUNT(*) AS total FROM "${table}"`).get()?.total,
+          ) || 0;
+        } catch {
+          counts[table] = 0;
+        }
+      }
+
+      const ok = sizeBytes > 0
+        && integrity.length > 0
+        && integrity.every((value) => value === 'ok')
+        && foreignKeys.length === 0;
+
+      return {
+        ok,
+        error: ok ? null : 'Integritas atau foreign key backup bermasalah.',
+        path: target,
+        name,
+        sizeBytes,
+        schemaVersion,
+        integrity,
+        foreignKeyErrors: foreignKeys.length,
+        counts,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error.message,
+        path: target,
+        name,
+        sizeBytes: 0,
+        schemaVersion: 0,
+        counts: {},
+      };
+    } finally {
+      try {
+        probe?.close();
+      } catch {
+        // Koneksi probe sudah tertutup.
+      }
+    }
+  }
+
+  /**
+   * Pulihkan isi tabel dari file backup ke database aktif.
+   *
+   * Data disalin lewat `ATTACH DATABASE` di dalam satu transaksi, sehingga
+   * tidak perlu restart dan tidak ada momen database setengah pulih.
+   *
+   * @param {string} filePath
+   * @param {{verify?: boolean}} [options]
+   * @returns {{name: string, path: string, schemaVersion: number, counts: Record<string, number>}}
+   */
+  function restoreBackup(filePath, { verify = true } = {}) {
+    if (isMemory) {
+      throw new AppError('DB_RESTORE_MEMORY', 'Database in-memory tidak bisa direstore.');
+    }
+
+    const target = String(filePath || '');
+    if (!target) {
+      throw new AppError('DB_RESTORE_NO_FILE', 'File backup tidak diberikan.');
+    }
+    if (!fs.existsSync(target)) {
+      throw new AppError('DB_RESTORE_NOT_FOUND', `Backup tidak ditemukan: ${path.basename(target)}.`);
+    }
+
+    if (verify) {
+      const result = verifyBackup(target);
+      if (!result.ok) {
+        throw new AppError('DB_RESTORE_INVALID', `Backup tidak valid: ${result.error}`);
+      }
+
+      const current = schemaVersionOf();
+      if (result.schemaVersion !== current) {
+        throw new AppError(
+          'DB_RESTORE_SCHEMA',
+          `Skema backup v${result.schemaVersion} tidak cocok dengan database v${current}.`,
+        );
+      }
+    }
+
+    let attached = false;
+    try {
+      db.prepare('ATTACH DATABASE ? AS restore_src').run(target);
+      attached = true;
+
+      // Cek ulang lewat koneksi yang benar-benar akan menyalin data.
+      const backupVersion = Number(db.pragma('restore_src.user_version', { simple: true })) || 0;
+      const currentVersion = schemaVersionOf();
+      if (backupVersion !== currentVersion) {
+        throw new AppError(
+          'DB_RESTORE_SCHEMA',
+          `Skema backup v${backupVersion} tidak cocok dengan database v${currentVersion}.`,
+        );
+      }
+
+      const apply = db.transaction(() => {
+        for (const table of DELETE_ORDER) {
+          db.prepare(`DELETE FROM "${table}"`).run();
+        }
+        for (const table of RESTORE_TABLES) {
+          db.prepare(`INSERT INTO "${table}" SELECT * FROM restore_src."${table}"`).run();
+        }
+      });
+      apply();
+    } catch (error) {
+      throw error instanceof AppError
+        ? error
+        : new AppError('DB_RESTORE_FAILED', `Restore gagal: ${error.message}`);
+    } finally {
+      if (attached) {
+        try {
+          db.prepare('DETACH DATABASE restore_src').run();
+        } catch {
+          // Abaikan: transaksi sudah selesai/dibatalkan.
+        }
+      }
+    }
+
+    const counts = {};
+    for (const table of RESTORE_TABLES) {
+      counts[table] = Number(db.prepare(`SELECT COUNT(*) AS total FROM "${table}"`).get()?.total) || 0;
+    }
+
+    return {
+      name: path.basename(target),
+      path: target,
+      schemaVersion: schemaVersionOf(),
+      counts,
+    };
+  }
 
   const database = {
     driver: 'sqlite',
@@ -306,6 +573,24 @@ function createSqliteDatabase({ filename = ':memory:', logger, now = Date.now } 
       return Boolean(statements.premiumCheck.get(String(jid), at));
     },
 
+    setUserBanned(jid, banned, { reason = null } = {}) {
+      const id = requireJid(jid);
+      database.ensureUser(id);
+      statements.setUserBanned.run(
+        banned ? 1 : 0,
+        banned ? reason : null,
+        banned ? now() : null,
+        now(),
+        id,
+      );
+      return database.getUser(id);
+    },
+
+    isUserBanned(jid) {
+      if (!jid) return false;
+      return Boolean(statements.userBanned.get(String(jid))?.is_banned);
+    },
+
     incrementUserCommands(jid) {
       return statements.incrementUserCommands.run(now(), requireJid(jid)).changes > 0;
     },
@@ -321,11 +606,22 @@ function createSqliteDatabase({ filename = ':memory:', logger, now = Date.now } 
       return database.getGroup(id);
     },
 
-    setGroupBanned(jid, banned) {
+    setGroupBanned(jid, banned, { reason = null } = {}) {
       const id = requireJid(jid);
       database.ensureGroup(id);
-      statements.setGroupBanned.run(banned ? 1 : 0, now(), id);
+      statements.setGroupBanned.run(
+        banned ? 1 : 0,
+        banned ? reason : null,
+        banned ? now() : null,
+        now(),
+        id,
+      );
       return database.getGroup(id);
+    },
+
+    isGroupBanned(jid) {
+      if (!jid) return false;
+      return Boolean(statements.groupBanned.get(String(jid))?.is_banned);
     },
 
     incrementGroupCommands(jid) {
@@ -435,20 +731,42 @@ function createSqliteDatabase({ filename = ':memory:', logger, now = Date.now } 
 
     /**
      * Backup konsisten memakai API online backup dari SQLite.
-     * @param {{directory?: string, keep?: number, prefix?: string}} [options]
+     *
+     * @param {{directory?: string, keep?: number, prefix?: string, verify?: boolean}} [options]
+     * @returns {Promise<{name: string, path: string, sizeBytes: number, removed: number, verification: object|null}>}
      */
-    async backup({ directory, keep = 14, prefix = 'varr' } = {}) {
+    async backup({ directory, keep = 14, prefix = 'varr', verify = false } = {}) {
       if (isMemory) {
         throw new AppError('DB_BACKUP_MEMORY', 'Database in-memory tidak bisa dibackup.');
       }
 
-      const targetDir = directory || path.join(path.dirname(filename), 'backups');
+      const targetDir = resolveBackupDirectory(directory);
       fs.mkdirSync(targetDir, { recursive: true });
 
-      const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
-      const destination = path.join(targetDir, `${prefix}-${stamp}.db`);
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 23);
+      let destination = path.join(targetDir, `${prefix}-${stamp}.db`);
+
+      // Nama backup memakai timestamp sampai milidetik; penjaga ini menangani
+      // kemungkinan dua backup dibuat pada milidetik yang sama.
+      let suffix = 1;
+      while (fs.existsSync(destination) && suffix < 100) {
+        destination = path.join(targetDir, `${prefix}-${stamp}-${suffix}.db`);
+        suffix += 1;
+      }
 
       await db.backup(destination);
+
+      let verification = null;
+      if (verify) {
+        verification = verifyBackup(destination);
+        if (!verification.ok) {
+          fs.rmSync(destination, { force: true });
+          throw new AppError(
+            'DB_BACKUP_INVALID',
+            `Backup yang baru dibuat gagal diverifikasi: ${verification.error}`,
+          );
+        }
+      }
 
       let removed = 0;
       const retention = Math.max(1, Math.trunc(keep) || 14);
@@ -467,7 +785,51 @@ function createSqliteDatabase({ filename = ':memory:', logger, now = Date.now } 
       }
 
       const sizeBytes = fs.statSync(destination).size;
-      return { path: destination, sizeBytes, removed };
+      return {
+        name: path.basename(destination),
+        path: destination,
+        sizeBytes,
+        removed,
+        verification,
+      };
+    },
+
+    listBackups(options) {
+      return listBackups(options);
+    },
+
+    verifyBackup(filePath) {
+      return verifyBackup(filePath);
+    },
+
+    restoreBackup(filePath, options) {
+      return restoreBackup(filePath, options);
+    },
+
+    countUsers() {
+      return Number(statements.countUsers.get()?.total) || 0;
+    },
+
+    countGroups() {
+      return Number(statements.countGroups.get()?.total) || 0;
+    },
+
+    countAllWarnings() {
+      return Number(statements.countAllWarnings.get()?.total) || 0;
+    },
+
+    countBannedUsers() {
+      return Number(statements.countBannedUsers.get()?.total) || 0;
+    },
+
+    /**
+     * @param {{prefix?: string, limit?: number}} [options]
+     * @returns {Array<{key: string, value: number}>}
+     */
+    topStats({ prefix = 'command:', limit = 5 } = {}) {
+      const size = Math.max(1, Math.min(100, Math.trunc(limit) || 5));
+      return statements.topStats.all(`${prefix}%`, size)
+        .map((row) => ({ key: row.key, value: Number(row.value) }));
     },
 
     close() {
@@ -487,5 +849,6 @@ function createSqliteDatabase({ filename = ':memory:', logger, now = Date.now } 
 
 module.exports = {
   MIGRATIONS,
+  RESTORE_TABLES,
   createSqliteDatabase,
 };

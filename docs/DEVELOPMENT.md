@@ -38,17 +38,18 @@ Pesan dari chat yang sama diproses berurutan lewat `src/core/queue.js`. Tujuanny
 | `src/core/messageCache.js` | Cache pesan untuk `getMessage` (retry Baileys) |
 | `src/core/registry.js` | Validasi manifest, alias, auto-load command |
 | `src/core/middleware/` | Aturan lintas command |
-| `src/core/database/` | Interface database + driver SQLite |
+| `src/core/database/` | Interface database + driver SQLite (skema, backup, restore) |
 | `src/core/state.js` | Mode & maintenance yang bisa berubah saat runtime |
+| `src/services/` | Logika fitur: guard grup, event grup, media, downloader, warning |
 | `src/commands/` | Implementasi command per kategori |
 | `src/locales/` | String user-facing (`id.json`, `en.json`) |
-| `src/utils/` | Helper murni: teks, JID, grup, format |
+| `src/utils/` | Helper murni: teks, JID, grup, target moderasi, backup, format |
 
 ---
 
 ## 3. Menambah Command
 
-Buat file di `src/commands/<kategori>/<nama>.js`. File otomatis dimuat saat startup (tidak perlu registrasi manual).
+Buat file di `src/commands/<kategori>/<nama>.js`. File otomatis dimuat saat startup (tidak perlu registrasi manual). File yang namanya diawali `_` (mis. `_shared.js`) dilewati, jadi aman dipakai untuk helper internal kategori.
 
 ```js
 module.exports = {
@@ -132,14 +133,17 @@ function createContohMiddleware() {
 Daftarkan di `src/core/middleware/index.js` pada urutan yang tepat. Urutan saat ini:
 
 1. `normalize` — identitas, role, data user/grup
-2. `maintenance`
-3. `mode`
-4. `permission`
-5. `scope`
-6. `cooldown`
-7. `rateLimit`
+2. `banned` — pengguna/grup yang diblokir owner (owner selalu lolos)
+3. `maintenance`
+4. `mode`
+5. `permission`
+6. `scope`
+7. `cooldown`
+8. `rateLimit`
 
-Rate limit sengaja setelah cooldown agar command yang terkena cooldown tidak ikut memakan kuota menit.
+`banned` sengaja setelah `normalize` (butuh identitas) dan sebelum aturan lain agar blokir tidak bisa diakali. Rate limit sengaja setelah cooldown agar command yang terkena cooldown tidak ikut memakan kuota menit.
+
+Guard grup **bukan** middleware: ia dijalankan di handler sebelum parsing command agar pesan biasa (tanpa prefix) juga termoderasi.
 
 ---
 
@@ -197,8 +201,34 @@ Aturan:
 
 - Jangan menyimpan isi pesan secara default.
 - Jangan menaruh file SQLite di NFS/network share.
-- Backup otomatis berjalan harian ke `data/backups/` dan saat shutdown.
+- Backup otomatis berjalan harian ke `BACKUP_DIR` (default `data/backups/`) dan saat shutdown.
+- Skema saat ini **v2**. Menambah kolom/tabel wajib lewat `MIGRATIONS` baru di `sqlite.js`, jangan mengubah migrasi lama.
 - Untuk multi-instance, tunggu driver MySQL/PostgreSQL (Phase 5).
+
+### Ban, statistik, dan backup
+
+```js
+ctx.db.setUserBanned(jid, true, { reason: 'spam' });
+ctx.db.isUserBanned(jid);
+ctx.db.setGroupBanned(ctx.chatId, true, { reason: 'spam' });
+ctx.db.isGroupBanned(ctx.chatId);
+
+ctx.db.countUsers();
+ctx.db.countGroups();
+ctx.db.countAllWarnings();
+ctx.db.topStats({ prefix: 'command:', limit: 5 });
+
+const backup = await ctx.db.backup({
+  directory: ctx.config.backupsDir,
+  keep: ctx.config.backupKeep,
+  verify: true,
+});
+ctx.db.listBackups({ directory: ctx.config.backupsDir });
+ctx.db.verifyBackup(backup.path);
+ctx.db.restoreBackup(backup.path);
+```
+
+`restoreBackup` menyalin isi tabel lewat `ATTACH DATABASE` di dalam satu transaksi dan menolak backup dengan versi skema berbeda. Tabel `migrations` tidak dipulihkan.
 
 ---
 
@@ -213,6 +243,8 @@ return ctx.t('errors.cooldown', { seconds: 5, command: 'ping' });
 
 Jika key tidak ada, translator mengembalikan key itu sendiri. Jangan menaruh markup kompleks di locale; susun di command.
 
+`tests/locales.test.js` memindai semua literal bertitik di `src/` yang memakai namespace i18n dan memastikan key-nya ada di kedua locale, serta memastikan struktur `id` dan `en` identik. Menambah key di satu bahasa saja akan membuat test gagal.
+
 ---
 
 ## 8. Test
@@ -225,18 +257,19 @@ npm test
 
 Pola yang dipakai:
 
-- Unit test helper murni (`text`, `jid`, `group`, `config`).
-- Database memakai `:memory:`.
-- Handler diuji dengan fake socket yang menampung payload terkirim.
-- Waktu cooldown/rate limit diinjeksi lewat `now` agar tidak flaky.
+- Unit test helper murni (`text`, `jid`, `group`, `config`, `downloader`, `media`).
+- Database memakai `:memory:`; backup/restore memakai file di folder temporary.
+- Handler diuji dengan fake socket yang menampung payload terkirim (`tests/helpers/bot.js`).
+- Waktu cooldown/rate limit/guard diinjeksi lewat `now` agar tidak flaky.
 - Queue diuji dengan gate promise + polling `waitFor`, bukan `sleep` tetap.
 - Cache pesan memakai `now` yang diinjeksi agar TTL deterministik.
+- Downloader diuji dengan `runCommand` palsu; tidak ada unduhan jaringan nyata.
 
 Contoh test command baru:
 
 ```js
 const bot = createTestBot();
-t.after(() => bot.db.close());
+t.after(() => bot.close());
 
 await bot.handler.handleMessage(bot.sock, makeMessage({ text: '.hello' }));
 assert.match(lastText(bot), /Halo/);
@@ -245,20 +278,25 @@ assert.match(lastText(bot), /Halo/);
 Test wajib untuk perubahan pada:
 
 - parser / normalisasi JID;
-- permission, mode, cooldown, rate limit;
-- database dan migrasi;
-- handler atau error boundary.
+- permission, mode, banned, cooldown, rate limit;
+- database, migrasi, backup/restore;
+- handler atau error boundary;
+- key i18n.
+
+Saat ini ada 142 test. Jika `node --test tests` gagal karena `spawn EPERM` (lingkungan sandbox yang melarang child process), jalankan per file: `node tests/nama.test.js`.
 
 ---
 
 ## 9. Konvensi
 
-- **CommonJS**, JavaScript + JSDoc. Tidak ada TypeScript di Phase 1.
-- Satu file command = satu tanggung jawab. Logika berat taruh di `services/` saat sudah ada.
+- **CommonJS**, JavaScript + JSDoc. Tidak ada TypeScript di Phase 1–2.
+- Satu file command = satu tanggung jawab. Logika berat taruh di `services/`.
 - Selalu validasi input dari chat.
-- Jangan log token, API key, nomor lengkap, atau isi pesan.
+- Jangan log token, API key, nomor lengkap, isi pesan, atau URL yang dikirim pengguna.
 - Jangan menyalin kode GPL-3.0. Ide boleh; kode ditulis ulang.
-- Semua command baru harus punya manifest lengkap dan test minimal.
+- Semua command baru harus punya manifest lengkap, key i18n di `id` + `en`, dan test minimal.
+- Downloader tidak boleh memanggil URL dari chat tanpa `validateMediaUrl` (allowlist host + anti-SSRF).
+- Untuk mengunduh media WhatsApp, pakai `services/media` (`findMedia` + `download`). Jangan panggil `downloadMediaMessage` langsung tanpa `host: MEDIA_HOST`, karena Baileys rc13 bisa memakai host usang `a.whatsapp.net` dari field `url`.
 - Hot reload plugin belum tersedia; restart bot setelah menambah command.
 
 ---
@@ -268,4 +306,5 @@ Test wajib untuk perubahan pada:
 - Docker: `docker compose up -d --build`.
 - Pterodactyl: gunakan Node.js 22+ atau custom image, startup `node index.js`.
 - Pastikan `auth_info_baileys/` dan `data/` berada di volume persisten.
+- Downloader butuh `yt-dlp` di `PATH` (atau `YTDLP_PATH`) dan `ffmpeg` untuk `ytmp3`. Image Docker sudah menyertakan keduanya.
 - Sinyal `SIGTERM`/`SIGINT` akan menutup socket dan membuat backup sebelum keluar.

@@ -43,7 +43,8 @@
     "rateLimit": "Too many commands in a short time. Wait *{seconds} seconds* and try again.",
     "groupOnly": "This command can only be used in groups.",
     "privateOnly": "This command can only be used in private chats.",
-    "scope": "This command cannot be used in this chat."
+    "scope": "This command cannot be used in this chat.",
+    "banned": "You are blocked from using this bot. Contact the owner if you think this is a mistake."
   },
   "commands": {
     "menu": {
@@ -66,6 +67,90 @@
     },
     "maintenance": {
       "description": "Enable or disable maintenance mode"
+    },
+    "welcome": {
+      "description": "Configure the welcome message for new members"
+    },
+    "goodbye": {
+      "description": "Configure the goodbye message for leaving members"
+    },
+    "promote": {
+      "description": "Promote a member to group admin"
+    },
+    "demote": {
+      "description": "Remove a member's group admin status"
+    },
+    "kick": {
+      "description": "Remove a member from the group"
+    },
+    "mute": {
+      "description": "Close the group (admins only can send messages)"
+    },
+    "unmute": {
+      "description": "Open the group so every member can send messages"
+    },
+    "tagall": {
+      "description": "Mention every group member"
+    },
+    "hidetag": {
+      "description": "Notify every member without visible mentions"
+    },
+    "groupinfo": {
+      "description": "Show group information"
+    },
+    "warn": {
+      "description": "Give a warning to a group member"
+    },
+    "warnings": {
+      "description": "Show a member's warning list"
+    },
+    "unwarn": {
+      "description": "Clear all warnings of a member"
+    },
+    "antilink": {
+      "description": "Enable the link guard in this group"
+    },
+    "antispam": {
+      "description": "Enable the spam guard in this group"
+    },
+    "setwarnlimit": {
+      "description": "Set the warning limit before a member is removed"
+    },
+    "guardstatus": {
+      "description": "Show the group guard status"
+    },
+    "sticker": {
+      "description": "Turn an image into a sticker"
+    },
+    "toimg": {
+      "description": "Turn a sticker into a PNG image"
+    },
+    "doctor": {
+      "description": "Check bot, session, and dependency health"
+    },
+    "ytmp3": {
+      "description": "Download YouTube audio (MP3)"
+    },
+    "ytmp4": {
+      "description": "Download YouTube video (MP4)"
+    },
+    "tiktok": {
+      "description": "Download a TikTok video without watermark"
+    },
+    "ban": {
+      "description": "Block a user or group from the bot"
+    },
+    "unban": {
+      "description": "Unblock a user or group"
+    },
+    "stats": {
+      "description": "Show bot usage statistics"
+    },
+    "backup": {
+      "description": "Create, list, and verify database backups"
+    },
+    "restore": {
+      "description": "Restore the database from a backup file"
     }
   },
   "menu": {
@@ -138,5 +223,203 @@
     "already": "Maintenance mode is already *{status}*.",
     "invalid": "Use *{prefix}maintenance on* or *{prefix}maintenance off*.",
     "notice": "During maintenance, only the owner and emergency commands (ping, alive, help, menu) are available."
+  },
+  "group": {
+    "metadataFailed": "Failed to read group metadata. Please try again later.",
+    "noParticipants": "There are no group members to mention.",
+    "targetMissing": "Specify a target: mention, reply, or type a number.\nExample: *{prefix}{command} @6281234567890*",
+    "targetNotMember": "The target is not a member of this group.",
+    "targetSelf": "You cannot target yourself.",
+    "protectedBot": "You cannot target the bot itself.",
+    "protectedOwner": "The target is the bot owner and is protected.",
+    "protectedGroupOwner": "The target is the group creator and is protected.",
+    "targetAdmin": "The target is a group admin. Demote them first.",
+    "botNotAdmin": "The bot must be a group admin to perform this action.",
+    "reason": "Reason: {reason}",
+    "kicked": "✅ {user} has been removed from the group.",
+    "warnAdded": "⚠️ {user} received warning {count}/{limit}.",
+    "warnKicked": "🚪 {user} was removed after reaching {limit} warnings.",
+    "warnLimitNoAdmin": "⚠️ {user} reached {limit} warnings, but the bot is not an admin so it cannot remove them.",
+    "warningsEmpty": "No warnings for {user} (limit {limit}).",
+    "warningsHeader": "⚠️ Warnings for {user}: {count}/{limit}",
+    "warningsCleared": "🧹 Cleared {count} warnings for {user}.",
+    "alreadyAdmin": "{user} is already an admin.",
+    "targetNotAdmin": "{user} is not a group admin.",
+    "promoted": "⬆️ {user} is now an admin.",
+    "demoted": "⬇️ Admin status removed from {user}.",
+    "alreadyMuted": "The group is already admin-only.",
+    "muted": "🔒 Group closed. Only admins can send messages.",
+    "alreadyUnmuted": "The group is already open to all members.",
+    "unmuted": "🔓 Group opened. Every member can send messages.",
+    "tagallDefault": "📢 Announcement for all members.",
+    "hidetagDefault": "📢 Announcement for all members.",
+    "message": {
+      "title": "{feature} settings",
+      "status": "Status: *{status}*",
+      "text": "Current text:\n{text}",
+      "usingDefault": "_Using the default template._",
+      "placeholders": "Placeholders: *{name}*, *{number}*, *{mention}*, *{group}*, *{desc}*, *{count}*",
+      "usage": "Example: *{prefix}{command} on*, *{prefix}{command} set Hello {mention}*, *{prefix}{command} reset*",
+      "enabled": "{feature} enabled.",
+      "disabled": "{feature} disabled.",
+      "reset": "{feature} text restored to default.",
+      "empty": "Text cannot be empty.",
+      "tooLong": "Text is too long (maximum {max} characters).",
+      "saved": "{feature} text saved."
+    },
+    "info": {
+      "title": "ℹ️ {group} info",
+      "id": "ID",
+      "created": "Created",
+      "owner": "Creator",
+      "members": "Members",
+      "admins": "Admins",
+      "messageMode": "Message mode",
+      "editMode": "Edit mode",
+      "addMode": "Add member mode",
+      "botAdmin": "Bot admin",
+      "adminOnly": "admins only",
+      "allMembers": "all members",
+      "description": "Description"
+    }
+  },
+  "guard": {
+    "status": {
+      "title": "🛡️ *Guard Status*",
+      "antilink": "Antilink",
+      "antispam": "Antispam",
+      "warnLimit": "Warning limit",
+      "botAdmin": "Bot admin",
+      "hint": "Configure with *{prefix}antilink*, *{prefix}antispam*, and *{prefix}setwarnlimit*."
+    },
+    "featureStatus": "{feature}: *{status}*",
+    "action": "Action: *{action}*",
+    "actionsList": "Available actions: *delete* (remove message), *warn* (warning), *kick* (remove member).",
+    "usage": "Example: *{prefix}{command} on*, *{prefix}{command} warn*, *{prefix}{command} off*",
+    "featureEnabled": "{feature} enabled.",
+    "featureDisabled": "{feature} disabled.",
+    "actionChanged": "{feature} enabled with action *{action}*.",
+    "warned": "⚠️ {user} violated the guard: warning {count}/{limit}.",
+    "kicked": "🚪 {user} was removed by the guard ({reason}).",
+    "limitNoAdmin": "⚠️ {user} reached {limit} warnings, but the bot is not an admin.",
+    "reasonLink": "link",
+    "reasonSpam": "spam",
+    "warnLimitCurrent": "Current warning limit: *{limit}* (range {min}-{max}).",
+    "warnLimitInvalid": "The value must be a number between {min} and {max}.",
+    "warnLimitChanged": "Warning limit changed to *{limit}*."
+  },
+  "media": {
+    "unavailable": "Media features are unavailable because *sharp* is not installed.",
+    "stickerUsage": "Send an image with the *{prefix}sticker* caption or reply to an image with *{prefix}sticker*.",
+    "videoUnsupported": "Video stickers are not supported yet. Send an image or GIF.",
+    "tooLarge": "The media exceeds the {max} MB limit.",
+    "downloadFailed": "Failed to download the media. Please send it again.",
+    "convertFailed": "Failed to convert the media.",
+    "toimgUsage": "Reply to a sticker with *{prefix}toimg*.",
+    "toimgOnlySticker": "This command only works on stickers.",
+    "toimgCaption": "🖼️ Converted sticker."
+  },
+  "downloader": {
+    "unavailable": "The downloader is not ready: *yt-dlp* was not found. The owner can install yt-dlp and check *{prefix}doctor*.",
+    "invalidUrl": "Invalid URL. Example: *{prefix}{command} https://youtu.be/xxxxxxxxxxx*",
+    "unsupportedHost": "Unsupported link. Use a {platform} link.",
+    "tooLarge": "File too large; the limit is {max}.",
+    "tooLong": "Duration {duration} exceeds the {max} limit.",
+    "failed": "Failed to download the media. Try again or use another link.",
+    "ffmpegMissing": "FFmpeg is not installed, so media cannot be converted. The owner can check *{prefix}doctor*.",
+    "busy": "The downloader is busy. Please try again shortly.",
+    "processing": "⏳ Processing media...",
+    "audioCaption": "🎵 *{title}*\n⏱️ {duration} • {size}",
+    "videoCaption": "🎬 *{title}*\n⏱️ {duration} • {size}",
+    "tiktokCaption": "🎬 *{title}*\n👤 {author}",
+    "noAudio": "This media has no audio.",
+    "noVideo": "This media has no video.",
+    "titleUnknown": "Untitled",
+    "authorUnknown": "Unknown",
+    "durationUnknown": "?"
+  },
+  "backup": {
+    "title": "💾 *Database Backup*",
+    "created": "Backup created: *{name}* ({size})",
+    "verified": "Verification: *OK* (schema v{version})",
+    "unverified": "Verification: *failed* — {error}",
+    "listHeader": "Available backups ({count}):",
+    "listEmpty": "No backups yet. Run *{prefix}backup*.",
+    "listItem": "• {name} — {size} ({date})",
+    "verifyHeader": "🔎 Verify *{name}*",
+    "verifyOk": "Integrity: *OK*\nSchema: v{version}\nSize: {size}\n{counts}",
+    "verifyFailed": "Invalid backup: {error}",
+    "failed": "Backup failed: {error}",
+    "usage": "Use *{prefix}backup*, *{prefix}backup list*, or *{prefix}backup verify <name>*.",
+    "notFound": "Backup not found. Use *{prefix}backup list*.",
+    "restoreUsage": "Use *{prefix}restore <name> confirm* to restore.\nA safety backup is created automatically before restoring.",
+    "restoreConfirm": "Add *confirm* at the end of the command to really restore the data.",
+    "restored": "✅ Restore completed from *{name}*.\n{counts}",
+    "restoreFailed": "Restore failed: {error}",
+    "safetyBackup": "Safety backup: *{name}*",
+    "counts": "Restored data: {counts}",
+    "tableRow": "{table}: {count} rows"
+  },
+  "ban": {
+    "targetMissing": "Specify a user target (mention/reply/number) or *group*.\nExample: *{prefix}ban @6281234567890*",
+    "protected": "You cannot block the owner or the bot.",
+    "bannedUser": "🚫 {user} is blocked from the bot.{reason}",
+    "unbannedUser": "✅ {user} can use the bot again.",
+    "bannedGroup": "🚫 This group is blocked from the bot.",
+    "unbannedGroup": "✅ This group can use the bot again.",
+    "alreadyBanned": "{user} is already blocked.",
+    "notBanned": "{user} is not blocked.",
+    "reason": " Reason: {reason}"
+  },
+  "stats": {
+    "title": "📊 *{bot} Statistics*",
+    "commands": "Commands processed",
+    "errors": "Errors",
+    "unknown": "Unknown commands",
+    "guard": "Guard handled",
+    "users": "Registered users",
+    "groups": "Registered groups",
+    "warnings": "Stored warnings",
+    "database": "Database",
+    "databaseValue": "SQLite {size} (schema v{version})",
+    "uptime": "Uptime",
+    "memory": "Memory",
+    "mode": "Mode",
+    "topCommands": "Most used commands:",
+    "empty": "No data yet.",
+    "topItem": "• {name} — {count}"
+  },
+  "doctor": {
+    "title": "🩺 *Varr Doctor*",
+    "node": "Node.js",
+    "database": "Database",
+    "databaseOk": "SQLite OK (schema v{version}, {size})",
+    "databaseError": "SQLite has a problem",
+    "session": "Session",
+    "sessionFound": "creds.json found",
+    "sessionMissing": "creds.json missing (not paired yet)",
+    "disk": "Disk",
+    "diskFree": "{free} free of {total}",
+    "diskError": "unreadable ({error})",
+    "ffmpeg": "FFmpeg",
+    "ffmpegOk": "available ({version})",
+    "ffmpegMissing": "not found — audio/video limited",
+    "sharp": "sharp",
+    "sharpMissing": "not available — sticker/toimg disabled",
+    "ytdlp": "yt-dlp",
+    "ytdlpOk": "available ({version})",
+    "ytdlpMissing": "not found — downloader disabled",
+    "backups": "Backups",
+    "backupsOk": "{count} files",
+    "backupsEmpty": "no backups yet",
+    "tmp": "Temporary",
+    "tmpOk": "{count} files ({size})",
+    "uptime": "Uptime",
+    "memory": "Memory"
+  },
+  "groupEvents": {
+    "welcomeDefault": "👋 Welcome {mention} to *{group}*!",
+    "goodbyeDefault": "👋 {name} has left *{group}*.",
+    "fallbackGroup": "this group"
   }
 }
