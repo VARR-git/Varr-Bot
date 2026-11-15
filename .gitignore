@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# WhatsApp session & credentials
+auth_info_baileys/
+session/
+*.session
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data
+data/
+logs/
+tmp/
+*.log
+
+# OS & editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

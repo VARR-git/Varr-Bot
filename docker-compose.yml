@@ -1,0 +1,21 @@
+services:
+  varr-bot:
+    build: .
+    container_name: varr-bot
+    # Bot berhenti sendiri saat sesi tidak bisa dilanjutkan (logout/forbidden).
+    # Batasi restart agar tidak crash-loop tanpa henti.
+    restart: on-failure:5
+    init: true
+    stdin_open: true
+    tty: true
+    # .env wajib ada (copy dari .env.example); tanpa ini config bot kosong.
+    env_file:
+      - .env
+    environment:
+      TZ: ${TZ:-Asia/Jakarta}
+      NODE_ENV: production
+    volumes:
+      - ./auth_info_baileys:/app/auth_info_baileys
+      - ./data:/app/data
+    # Beri waktu untuk menutup socket dan membuat backup saat shutdown.
+    stop_grace_period: 30s

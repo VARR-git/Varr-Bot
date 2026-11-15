@@ -1,0 +1,22 @@
+# Build context
+node_modules
+npm-debug.log
+.git
+.gitignore
+.vscode
+.idea
+
+# Secrets & runtime data
+.env
+.env.*
+auth_info_baileys
+session
+data
+logs
+tmp
+*.log
+
+# Local artifacts
+docs
+README.md
+LICENSE

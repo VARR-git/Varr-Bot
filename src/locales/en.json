@@ -1,0 +1,142 @@
+{
+  "common": {
+    "unknown": "Unknown",
+    "none": "None",
+    "yes": "Yes",
+    "no": "No",
+    "enabled": "enabled",
+    "disabled": "disabled",
+    "bot": "Bot",
+    "user": "User",
+    "group": "Group",
+    "private": "Private chat"
+  },
+  "roles": {
+    "user": "User",
+    "premium": "Premium",
+    "admin": "Group Admin",
+    "owner": "Owner"
+  },
+  "categories": {
+    "general": "General",
+    "owner": "Owner",
+    "group": "Group",
+    "guard": "Group Guard",
+    "tools": "Tools",
+    "media": "Media",
+    "downloader": "Downloader",
+    "ai": "AI",
+    "games": "Games",
+    "economy": "Economy",
+    "other": "Other"
+  },
+  "errors": {
+    "generic": "Sorry, something went wrong while processing the command. Please try again later.",
+    "timeout": "The command took too long to process. Please try again.",
+    "unknownCommand": "Unknown command *{command}*.\nType *{prefix}help* to see the command list.",
+    "permission": "This command requires *{role}* access.",
+    "maintenance": "The bot is in maintenance mode. Please try again later.",
+    "modeSelf": "The bot is in *self* mode. Only the owner can use commands.",
+    "modePrivateGroup": "The bot is in *private* mode. In groups, only the owner and group admins can use commands.",
+    "modePrivateDirect": "The bot is in *private* mode. In private chats, only the owner can use commands.",
+    "cooldown": "Wait *{seconds} seconds* before using *{command}* again.",
+    "rateLimit": "Too many commands in a short time. Wait *{seconds} seconds* and try again.",
+    "groupOnly": "This command can only be used in groups.",
+    "privateOnly": "This command can only be used in private chats.",
+    "scope": "This command cannot be used in this chat."
+  },
+  "commands": {
+    "menu": {
+      "description": "Show available commands"
+    },
+    "help": {
+      "description": "Show detailed usage for a command"
+    },
+    "ping": {
+      "description": "Check latency, uptime, and bot status"
+    },
+    "alive": {
+      "description": "Check whether the bot is online"
+    },
+    "owner": {
+      "description": "Show the bot owner's contact"
+    },
+    "mode": {
+      "description": "Show or change the bot mode (public/private/self)"
+    },
+    "maintenance": {
+      "description": "Enable or disable maintenance mode"
+    }
+  },
+  "menu": {
+    "greeting": "Hello, {name}! 👋",
+    "header": "*{bot}* v{version}",
+    "role": "Role",
+    "mode": "Mode",
+    "uptime": "Uptime",
+    "prefix": "Prefix",
+    "total": "Total",
+    "totalValue": "{count} commands",
+    "empty": "No commands are available to you yet.",
+    "footer": "Type *{prefix}help <command>* for details.\nThis bot is unofficial and not affiliated with WhatsApp."
+  },
+  "help": {
+    "header": "*{bot} Help*",
+    "hint": "Type *{prefix}help <command>* for command details.",
+    "notFound": "Command *{command}* was not found.",
+    "usage": "Usage",
+    "aliases": "Aliases",
+    "category": "Category",
+    "permission": "Access",
+    "cooldown": "Cooldown",
+    "cooldownValue": "{seconds} seconds",
+    "descriptionLabel": "Description",
+    "examples": "Examples",
+    "noAlias": "None"
+  },
+  "ping": {
+    "title": "*Pong!* 🏓",
+    "latency": "Latency",
+    "uptime": "Uptime",
+    "memory": "Memory",
+    "database": "Database",
+    "version": "Version",
+    "node": "Node.js",
+    "commands": "Commands"
+  },
+  "alive": {
+    "title": "*{bot}* is alive ✅",
+    "status": "Status",
+    "online": "Online",
+    "uptime": "Uptime",
+    "mode": "Mode",
+    "prefix": "Prefix",
+    "version": "Version",
+    "footer": "Send *{prefix}menu* to see the command list."
+  },
+  "owner": {
+    "title": "*{bot} Owner*",
+    "empty": "No owner is configured. Set *OWNER_NUMBERS* in the .env file.",
+    "contact": "• +{number} — wa.me/{number}",
+    "footer": "Contact the owner only for important matters."
+  },
+  "mode": {
+    "title": "*Bot Mode*",
+    "current": "Current mode: *{mode}*",
+    "changed": "Bot mode changed from *{from}* to *{to}*.",
+    "already": "Bot mode is already *{mode}*.",
+    "invalid": "Mode *{mode}* is invalid. Options: {options}.",
+    "list": "*public* — everyone can use commands.\n*private* — only the owner and group admins.\n*self* — owner only.",
+    "usage": "Example: *{prefix}mode private*"
+  },
+  "maintenance": {
+    "title": "*Maintenance Mode*",
+    "current": "Current status: *{status}*.",
+    "on": "maintenance enabled",
+    "off": "normal",
+    "changed": "Maintenance mode is now *{status}*.",
+    "already": "Maintenance mode is already *{status}*.",
+    "invalid": "Use *{prefix}maintenance on* or *{prefix}maintenance off*.",
+    "notice": "During maintenance, only the owner and emergency commands (ping, alive, help, menu) are available."
+  }
+}

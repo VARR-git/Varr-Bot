@@ -1,0 +1,142 @@
+{
+  "common": {
+    "unknown": "Tidak diketahui",
+    "none": "Tidak ada",
+    "yes": "Ya",
+    "no": "Tidak",
+    "enabled": "aktif",
+    "disabled": "nonaktif",
+    "bot": "Bot",
+    "user": "Pengguna",
+    "group": "Grup",
+    "private": "Chat pribadi"
+  },
+  "roles": {
+    "user": "Pengguna",
+    "premium": "Premium",
+    "admin": "Admin Grup",
+    "owner": "Owner"
+  },
+  "categories": {
+    "general": "Umum",
+    "owner": "Owner",
+    "group": "Grup",
+    "guard": "Keamanan Grup",
+    "tools": "Tools",
+    "media": "Media",
+    "downloader": "Downloader",
+    "ai": "AI",
+    "games": "Game",
+    "economy": "Ekonomi",
+    "other": "Lainnya"
+  },
+  "errors": {
+    "generic": "Maaf, terjadi kesalahan saat memproses command. Coba lagi nanti.",
+    "timeout": "Command terlalu lama diproses. Coba lagi.",
+    "unknownCommand": "Command *{command}* tidak dikenal.\nKetik *{prefix}help* untuk melihat daftar command.",
+    "permission": "Command ini membutuhkan akses *{role}*.",
+    "maintenance": "Bot sedang dalam mode maintenance. Coba lagi nanti.",
+    "modeSelf": "Bot sedang dalam mode *self*. Hanya owner yang bisa memakai command.",
+    "modePrivateGroup": "Bot sedang dalam mode *private*. Di grup, hanya owner dan admin grup yang bisa memakai command.",
+    "modePrivateDirect": "Bot sedang dalam mode *private*. Di chat pribadi, hanya owner yang bisa memakai command.",
+    "cooldown": "Tunggu *{seconds} detik* sebelum memakai *{command}* lagi.",
+    "rateLimit": "Terlalu banyak command dalam waktu singkat. Tunggu *{seconds} detik* lagi.",
+    "groupOnly": "Command ini hanya bisa dipakai di grup.",
+    "privateOnly": "Command ini hanya bisa dipakai di chat pribadi.",
+    "scope": "Command ini tidak bisa dipakai di chat ini."
+  },
+  "commands": {
+    "menu": {
+      "description": "Tampilkan daftar command yang tersedia"
+    },
+    "help": {
+      "description": "Lihat detail cara pakai sebuah command"
+    },
+    "ping": {
+      "description": "Cek latensi, uptime, dan status bot"
+    },
+    "alive": {
+      "description": "Cek apakah bot aktif"
+    },
+    "owner": {
+      "description": "Tampilkan kontak owner bot"
+    },
+    "mode": {
+      "description": "Lihat atau ubah mode bot (public/private/self)"
+    },
+    "maintenance": {
+      "description": "Aktifkan atau matikan mode maintenance"
+    }
+  },
+  "menu": {
+    "greeting": "Halo, {name}! 👋",
+    "header": "*{bot}* v{version}",
+    "role": "Role",
+    "mode": "Mode",
+    "uptime": "Uptime",
+    "prefix": "Prefix",
+    "total": "Total",
+    "totalValue": "{count} command",
+    "empty": "Belum ada command yang bisa kamu akses.",
+    "footer": "Ketik *{prefix}help <command>* untuk detail.\nBot ini tidak resmi dan tidak berafiliasi dengan WhatsApp."
+  },
+  "help": {
+    "header": "*Bantuan {bot}*",
+    "hint": "Ketik *{prefix}help <command>* untuk detail command.",
+    "notFound": "Command *{command}* tidak ditemukan.",
+    "usage": "Cara pakai",
+    "aliases": "Alias",
+    "category": "Kategori",
+    "permission": "Akses",
+    "cooldown": "Cooldown",
+    "cooldownValue": "{seconds} detik",
+    "descriptionLabel": "Deskripsi",
+    "examples": "Contoh",
+    "noAlias": "Tidak ada"
+  },
+  "ping": {
+    "title": "*Pong!* 🏓",
+    "latency": "Latensi",
+    "uptime": "Uptime",
+    "memory": "Memori",
+    "database": "Database",
+    "version": "Versi",
+    "node": "Node.js",
+    "commands": "Command"
+  },
+  "alive": {
+    "title": "*{bot}* aktif ✅",
+    "status": "Status",
+    "online": "Online",
+    "uptime": "Uptime",
+    "mode": "Mode",
+    "prefix": "Prefix",
+    "version": "Versi",
+    "footer": "Kirim *{prefix}menu* untuk melihat command."
+  },
+  "owner": {
+    "title": "*Owner {bot}*",
+    "empty": "Owner belum dikonfigurasi. Isi *OWNER_NUMBERS* di file .env.",
+    "contact": "• +{number} — wa.me/{number}",
+    "footer": "Hubungi owner hanya untuk urusan penting."
+  },
+  "mode": {
+    "title": "*Mode Bot*",
+    "current": "Mode saat ini: *{mode}*",
+    "changed": "Mode bot diubah dari *{from}* menjadi *{to}*.",
+    "already": "Mode bot sudah *{mode}*.",
+    "invalid": "Mode *{mode}* tidak valid. Pilihan: {options}.",
+    "list": "*public* — semua orang bisa memakai command.\n*private* — hanya owner dan admin grup.\n*self* — hanya owner.",
+    "usage": "Contoh: *{prefix}mode private*"
+  },
+  "maintenance": {
+    "title": "*Mode Maintenance*",
+    "current": "Status saat ini: *{status}*.",
+    "on": "maintenance aktif",
+    "off": "normal",
+    "changed": "Mode maintenance sekarang *{status}*.",
+    "already": "Mode maintenance sudah *{status}*.",
+    "invalid": "Gunakan *{prefix}maintenance on* atau *{prefix}maintenance off*.",
+    "notice": "Saat maintenance, hanya owner dan command darurat (ping, alive, help, menu) yang bisa dipakai."
+  }
+}
