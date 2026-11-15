@@ -221,7 +221,7 @@ Panduan menambah command ada di [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ## Referensi Utama
 
-Varr-Bot terinspirasi oleh pola dan fitur dari proyek open source berikut (tanpa menyalin kode secara mentah):
+Varr-Bot terinspirasi dari proyek open source berikut:
 
 - [Baileys](https://github.com/WhiskeySockets/Baileys)
 - [BotsApp](https://github.com/Prince-Mendiratta/BotsApp)
