@@ -19,6 +19,7 @@ const {
   formatClock,
   installYtDlpRelease,
   isPrivateHost,
+  parseMetaOutput,
   releaseAssetName,
   resolveBinaryPath,
   runProcess,
@@ -52,7 +53,17 @@ function makeConfig(dir, overrides = {}) {
   };
 }
 
-function createFakeRunner({ duration = 30, writeBytes = 1_000, version = '2026.01.01' } = {}) {
+function createFakeRunner({
+  duration = 30,
+  writeBytes = 1_000,
+  version = '2026.01.01',
+  videoCodec = 'h264',
+  pixFmt = 'yuv420p',
+  audioCodec = 'aac',
+  probeDuration = duration,
+  audio = true,
+  sourceAudio = audio,
+} = {}) {
   const calls = [];
 
   async function run(file, args) {
@@ -71,25 +82,58 @@ function createFakeRunner({ duration = 30, writeBytes = 1_000, version = '2026.0
       };
     }
 
-    if (args.includes('-J')) {
+    if (args.includes('-print_format') && args.includes('-show_streams')) {
+      const streams = [
+        {
+          codec_type: 'video',
+          codec_name: videoCodec,
+          pix_fmt: pixFmt,
+          duration: String(probeDuration),
+        },
+      ];
+
+      if (audio) {
+        streams.push({
+          codec_type: 'audio',
+          codec_name: audioCodec,
+          duration: String(probeDuration),
+        });
+      }
+
       return {
         code: 0,
         stdout: JSON.stringify({
-          title: 'Video Uji',
-          duration,
-          uploader: 'Kreator Uji',
-          webpage_url: 'https://youtu.be/uji',
+          streams,
+          format: { duration: String(probeDuration) },
         }),
         stderr: '',
         error: null,
       };
     }
 
+    if (args.includes('-movflags')) {
+      const input = args[args.indexOf('-i') + 1];
+      const output = args[args.length - 1];
+      fs.copyFileSync(input, output);
+      return { code: 0, stdout: '', stderr: '', error: null };
+    }
+
     const template = args[args.indexOf('-o') + 1];
     const ext = args.includes('-x') ? 'mp3' : 'mp4';
     fs.writeFileSync(template.replace('%(ext)s', ext), Buffer.alloc(writeBytes, 1));
 
-    return { code: 0, stdout: '', stderr: '', error: null };
+    const stdout = [
+      'VARR:title:Video Uji',
+      `VARR:duration:${duration}`,
+      `VARR:acodec:${sourceAudio ? 'mp4a.40.2' : 'none'}`,
+      'VARR:uploader:Kreator Uji',
+      'VARR:islive:False',
+      'VARR:type:video',
+      'VARR:weburl:https://youtu.be/uji',
+      '',
+    ].join('\n');
+
+    return { code: 0, stdout, stderr: '', error: null };
   }
 
   return { run, calls };
@@ -228,6 +272,119 @@ test('downloader: fetch video mengunduh mp4', async (t) => {
   assert.deepEqual(fs.readdirSync(service.tmpDir), []);
 });
 
+test('downloader: ytmp4 memilih H.264/AAC agar kompatibel WhatsApp', async (t) => {
+  const dir = tempDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const runner = createFakeRunner();
+  const service = createDownloaderService({
+    config: makeConfig(dir),
+    logger: silentLogger,
+    runCommand: runner.run,
+  });
+
+  await service.fetch({
+    rawUrl: 'https://www.youtube.com/watch?v=abc',
+    kind: 'video',
+    platform: 'youtube',
+  });
+
+  const downloadCall = runner.calls.find((call) => call.args.includes('--merge-output-format'));
+  const format = downloadCall.args[downloadCall.args.indexOf('-f') + 1];
+
+  assert.match(format, /vcodec\^=avc1/);
+  assert.match(format, /acodec\^=mp4a/);
+});
+
+test('downloader: video H.264 di-remux faststart tanpa transcode', async (t) => {
+  const dir = tempDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const runner = createFakeRunner();
+  const service = createDownloaderService({
+    config: makeConfig(dir),
+    logger: silentLogger,
+    runCommand: runner.run,
+  });
+
+  await service.fetch({
+    rawUrl: 'https://www.youtube.com/watch?v=abc',
+    kind: 'video',
+    platform: 'youtube',
+  });
+
+  const ffmpegCall = runner.calls.find((call) => call.args.includes('-movflags'));
+  assert.ok(ffmpegCall.args.includes('copy'));
+  assert.equal(ffmpegCall.args.includes('libx264'), false);
+  assert.ok(ffmpegCall.args.includes('+faststart'));
+});
+
+test('downloader: video AV1 ditranscode ke H.264/AAC untuk WhatsApp', async (t) => {
+  const dir = tempDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const runner = createFakeRunner({ videoCodec: 'av01', pixFmt: 'yuv420p10le' });
+  const service = createDownloaderService({
+    config: makeConfig(dir),
+    logger: silentLogger,
+    runCommand: runner.run,
+  });
+
+  const result = await service.fetch({
+    rawUrl: 'https://www.youtube.com/watch?v=abc',
+    kind: 'video',
+    platform: 'youtube',
+  });
+
+  assert.equal(result.ext, 'mp4');
+  assert.equal(result.mimetype, 'video/mp4');
+
+  const ffmpegCall = runner.calls.find((call) => call.args.includes('-movflags'));
+  assert.ok(ffmpegCall.args.includes('libx264'));
+  assert.ok(ffmpegCall.args.includes('yuv420p'));
+  assert.equal(ffmpegCall.args.includes('copy'), false);
+  assert.ok(ffmpegCall.args.includes('+faststart'));
+  assert.deepEqual(fs.readdirSync(service.tmpDir), []);
+});
+
+test('downloader: video tanpa audio ditolak bila sumber punya audio', async (t) => {
+  const dir = tempDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const runner = createFakeRunner({ sourceAudio: true, audio: false });
+  const service = createDownloaderService({
+    config: makeConfig(dir),
+    logger: silentLogger,
+    runCommand: runner.run,
+  });
+
+  await assert.rejects(
+    () => service.fetch({ rawUrl: 'https://youtu.be/abc', kind: 'video', platform: 'youtube' }),
+    (error) => error.code === 'DOWNLOAD_FAILED' && /audio/i.test(error.message),
+  );
+
+  assert.deepEqual(fs.readdirSync(service.tmpDir), []);
+});
+
+test('downloader: unduhan terpotong ditolak (durasi tidak sesuai)', async (t) => {
+  const dir = tempDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const runner = createFakeRunner({ duration: 100, probeDuration: 50 });
+  const service = createDownloaderService({
+    config: makeConfig(dir),
+    logger: silentLogger,
+    runCommand: runner.run,
+  });
+
+  await assert.rejects(
+    () => service.fetch({ rawUrl: 'https://youtu.be/abc', kind: 'video', platform: 'youtube' }),
+    (error) => error.code === 'DOWNLOAD_FAILED' && /terpotong/i.test(error.message),
+  );
+
+  assert.deepEqual(fs.readdirSync(service.tmpDir), []);
+});
+
 test('downloader: menolak file melebihi batas ukuran', async (t) => {
   const dir = tempDir();
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -263,7 +420,8 @@ test('downloader: menolak durasi melebihi batas', async (t) => {
     (error) => error.code === 'DOWNLOAD_TOO_LONG',
   );
 
-  assert.equal(runner.calls.some((call) => call.args.includes('-x')), false);
+  // Unduhan dihentikan karena durasi melebihi batas; direktori kerja harus bersih.
+  assert.deepEqual(fs.readdirSync(service.tmpDir), []);
 });
 
 test('downloader: URL tidak valid tidak memanggil yt-dlp', async (t) => {
@@ -285,7 +443,7 @@ test('downloader: URL tidak valid tidak memanggil yt-dlp', async (t) => {
   assert.equal(runner.calls.length, 0);
 });
 
-test('downloader: kegagalan probe menjadi DOWNLOAD_FAILED', async (t) => {
+test('downloader: kegagalan yt-dlp dipetakan ke error yang jelas', async (t) => {
   const dir = tempDir();
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
@@ -296,7 +454,10 @@ test('downloader: kegagalan probe menjadi DOWNLOAD_FAILED', async (t) => {
       if (args.includes('--version')) {
         return { code: 0, stdout: '2026.01.01\n', stderr: '', error: null };
       }
-      if (args.includes('-J')) {
+      if (args[0] === '-version') {
+        return { code: 0, stdout: 'ffmpeg version 9.0\n', stderr: '', error: null };
+      }
+      if (args.includes('-o')) {
         return { code: 1, stdout: '', stderr: 'Video unavailable', error: null };
       }
       return { code: 0, stdout: '', stderr: '', error: null };
@@ -550,14 +711,6 @@ test('downloader: audio ditolak saat FFmpeg tidak tersedia', async (t) => {
       if (args[0] === '-version') {
         return { code: 127, stdout: '', stderr: '', error: 'spawn ffmpeg ENOENT' };
       }
-      if (args.includes('-J')) {
-        return {
-          code: 0,
-          stdout: JSON.stringify({ title: 'Uji', duration: 10 }),
-          stderr: '',
-          error: null,
-        };
-      }
       return { code: 0, stdout: '', stderr: '', error: null };
     },
   });
@@ -582,14 +735,6 @@ test('downloader: slideshow/foto ditolak sebagai media tidak didukung', async (t
       }
       if (args[0] === '-version') {
         return { code: 0, stdout: 'ffmpeg version 9.0\n', stderr: '', error: null };
-      }
-      if (args.includes('-J')) {
-        return {
-          code: 0,
-          stdout: JSON.stringify({ title: 'Slideshow', duration: 10 }),
-          stderr: '',
-          error: null,
-        };
       }
 
       const template = args[args.indexOf('-o') + 1];
@@ -671,6 +816,63 @@ test('downloader: runProcess menghentikan proses saat timeout', async () => {
 
   assert.equal(result.code, null);
   assert.match(result.error, /timeout 1000ms/);
+});
+
+test('downloader: runProcess abort via onStdout', async () => {
+  const script = [
+    "process.stdout.write('mulai\\n');",
+    "setTimeout(() => process.stdout.write('akhir\\n'), 5_000);",
+  ].join(' ');
+
+  const result = await runProcess(
+    process.execPath,
+    ['-e', script],
+    {
+      timeoutMs: 10_000,
+      onStdout: (chunk) => chunk.includes('mulai'),
+    },
+  );
+
+  assert.equal(result.code, null);
+  assert.equal(result.error, 'aborted by caller');
+  assert.ok(!result.stdout.includes('akhir'), 'proses harus berhenti sebelum menulis "akhir"');
+});
+
+test('downloader: parseMetaOutput membaca metadata dari stdout', () => {
+  const output = [
+    'VARR:title:Video Uji',
+    'VARR:duration:125',
+    'VARR:acodec:none',
+    'VARR:uploader:Kreator',
+    'VARR:islive:False',
+    'VARR:type:video',
+    'VARR:weburl:https://youtu.be/uji',
+  ].join('\n');
+
+  const meta = parseMetaOutput(output);
+
+  assert.equal(meta.title, 'Video Uji');
+  assert.equal(meta.durationSec, 125);
+  assert.equal(meta.hasAudio, false);
+  assert.equal(meta.author, 'Kreator');
+  assert.equal(meta.isLive, false);
+  assert.equal(meta.isPlaylist, false);
+  assert.equal(meta.webpageUrl, 'https://youtu.be/uji');
+});
+
+test('downloader: parseMetaOutput melanjutkan baris judul multi-baris', () => {
+  const output = [
+    'VARR:title:Judul baris pertama',
+    'baris kedua',
+    'VARR:duration:30.5',
+    'VARR:type:playlist',
+  ].join('\n');
+
+  const meta = parseMetaOutput(output);
+
+  assert.equal(meta.title, 'Judul baris pertama\nbaris kedua');
+  assert.equal(meta.durationSec, 30.5);
+  assert.equal(meta.isPlaylist, true);
 });
 
 test('downloader: tmpStats dan pruneTmp menangani direktori rekursif', (t) => {

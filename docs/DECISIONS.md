@@ -314,6 +314,7 @@ data/
 - Batas ukuran (`DOWNLOAD_MAX_MB`), durasi (`DOWNLOAD_MAX_DURATION_SEC`), timeout proses, dan jumlah unduhan paralel.
 - File temporary di `TMP_DIR` selalu dihapus; file sisa lebih dari 6 jam dibersihkan saat service dipakai.
 - Setiap unduhan memakai direktori kerja `mkdtemp` sendiri dan yt-dlp dijalankan dengan `--ignore-config` + `--no-cache-dir`.
+- Video dipaksa ke H.264/AAC: metadata dan media diambil dalam **satu** proses yt-dlp (`--print before_dl:`), format selection memprioritaskan format progresif `avc1` + `mp4a` ≤720p (satu file, tanpa merge) supaya cepat dan tidak terpotong. ffprobe memverifikasi codec, durasi (harus ≈ sumber), dan keberadaan audio; AV1/VP9/HEVC ditranscode ke H.264 8-bit + AAC. Semua video di-remux `faststart` agar kompatibel dengan WhatsApp.
 - Binary dicari di `BIN_DIR` lebih dulu, lalu `PATH`/path absolut. Auto-install **opt-in** (`YTDLP_AUTO_INSTALL=true`) hanya dari rilis resmi GitHub dengan verifikasi checksum SHA-256.
 - Command downloader memakai `timeoutMs` per command (660 detik) agar tidak dipotong `COMMAND_TIMEOUT_MS` global.
 - yt-dlp tidak tersedia → command menjawab dengan pesan jelas dan `.doctor` melaporkannya, bukan crash.

@@ -2,7 +2,7 @@
 
 Bot WhatsApp modular berbasis [Baileys](https://github.com/WhiskeySockets/Baileys) untuk kebutuhan grup, produktivitas, media, AI, dan otomasi. Varr-Bot dirancang agar mudah dirawat, aman dipakai, dan gampang ditambah fitur baru lewat sistem plugin.
 
-> **Status:** **Phase 2 — grup, guard, media & downloader selesai** (`v0.2.0`). Fondasi Phase 1 tetap dipakai; Phase 2 menambah 28 command (total 35) untuk grup, guard, media, downloader, backup & restore terverifikasi, ban/unban, `.stats`, serta migrasi database v2. 156 test hijau.
+> **Status:** **Phase 2 — grup, guard, media & downloader selesai** (`v0.2.0`). Fondasi Phase 1 tetap dipakai; Phase 2 menambah 28 command (total 35) untuk grup, guard, media, downloader, backup & restore terverifikasi, ban/unban, `.stats`, serta migrasi database v2. 164 test hijau.
 
 ## Kenapa Varr-Bot?
 
@@ -104,7 +104,7 @@ Admin grup dan owner selalu dikecualikan dari guard. Eskalasi: warning → kelua
 | `.ytmp4 <url>` | Video YouTube → MP4 |
 | `.tiktok <url>` | Video TikTok tanpa watermark |
 
-Downloader memakai **yt-dlp** + **FFmpeg**. Batas ukuran, durasi, timeout, jumlah unduhan paralel, dan antrean bisa diatur lewat `.env`. Command downloader punya timeout internal sendiri, jadi tidak terpotong `COMMAND_TIMEOUT_MS` yang lebih pendek.
+Downloader memakai **yt-dlp** + **FFmpeg**. Metadata dan media diambil dalam **satu** proses yt-dlp (`--print before_dl:`), jadi tidak ada panggilan probe terpisah — unduhan lebih cepat. Batas ukuran, durasi, timeout, jumlah unduhan paralel, dan antrean bisa diatur lewat `.env`. Command downloader punya timeout internal sendiri, jadi tidak terpotong `COMMAND_TIMEOUT_MS` yang lebih pendek. Video diprioritaskan ke **format progresif H.264 ≤720p** (satu file, tanpa merge) supaya cepat dan tidak terpotong; hasilnya diverifikasi dengan ffprobe (durasi harus sesuai sumber dan audio tidak boleh hilang) lalu dinormalisasi ke **H.264 + AAC** dengan `faststart` supaya bisa diputar di WhatsApp; AV1/VP9/HEVC otomatis ditranscode bila perlu.
 
 Urutan pencarian binary: `BIN_DIR` → `PATH` (atau path absolut di `YTDLP_PATH`). Jika `YTDLP_AUTO_INSTALL=true` dan yt-dlp belum ada, bot memasangnya sekali dari rilis resmi GitHub dengan verifikasi checksum SHA-256; fitur ini nonaktif secara default. `FFMPEG_PATH` bisa diisi path absolut bila FFmpeg tidak ada di `PATH`. Untuk video yang butuh login/usia, isi `YTDLP_COOKIES_FILE` dengan file cookies format Netscape. Jika dependensi tidak siap, command memberi tahu dan `.doctor` melaporkannya.
 
@@ -201,7 +201,7 @@ Untuk Pterodactyl, baca [docs/DECISIONS.md](docs/DECISIONS.md).
 │   ├── services/             # guard, groupEvents, media, downloader, warnings
 │   ├── locales/              # id.json, en.json
 │   └── utils/                # text, jid, group, groupTarget, groupModeration, backups, ...
-├── tests/                    # node:test (156 test)
+├── tests/                    # node:test (164 test)
 ├── docs/
 ├── data/                     # runtime DB, backup, tmp (tidak di-commit)
 ├── auth_info_baileys/        # session WhatsApp (tidak di-commit)

@@ -1,6 +1,6 @@
 # Review Phase 2 — Varr-Bot
 
-Dokumen audit internal untuk Phase 2: apa yang dibangun, kenapa begitu, dan di mana risikonya. Status: **Phase 2 selesai** (`v0.2.0`), **156 test hijau**.
+Dokumen audit internal untuk Phase 2: apa yang dibangun, kenapa begitu, dan di mana risikonya. Status: **Phase 2 selesai** (`v0.2.0`), **164 test hijau**.
 
 ---
 
@@ -177,41 +177,46 @@ Perbaikan yang dipakai: `services/media.js` mengirim `{ host: DEF_MEDIA_HOST }` 
 ```text
 argumen → cari URL → validateMediaUrl (platform allowlist)
   → limiter (concurrency, queue)
-    → yt-dlp -J (metadata: judul, durasi, live?)
-      → cek durasi ≤ DOWNLOAD_MAX_DURATION_SEC
-        → yt-dlp unduh ke data/tmp (max-filesize)
-          → cek ukuran ≤ DOWNLOAD_MAX_MB
-            → kirim audio/video
-              → hapus file temporary selalu (finally)
+    → yt-dlp sekali jalan: metadata (`--print before_dl:`) + unduhan
+      → cek durasi ≤ DOWNLOAD_MAX_DURATION_SEC (abort via stdout bila lebih)
+        → cek live/playlist → tolak
+          → unduh ke data/tmp (max-filesize, format progresif H.264 ≤720p)
+            → ffprobe cek codec + durasi + audio
+              → durasi tidak sesuai sumber / audio hilang → tolak (terpotong)
+              → H.264/AAC: remux `-c copy` + faststart
+              → AV1/VP9/HEVC: transcode H.264 8-bit + AAC + faststart
+                → cek ukuran ≤ DOWNLOAD_MAX_MB
+                  → kirim audio/video
+                    → hapus file temporary selalu (finally)
 ```
 
 - `ytmp3` memakai `-x --audio-format mp3` sehingga butuh FFmpeg.
-- `ytmp4`/`tiktok` memakai `bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b`.
+- `ytmp4`/`tiktok` memprioritaskan format progresif `avc1` + `mp4a` ≤720p (satu file, tanpa merge) supaya cepat dan tidak terpotong; hasil diverifikasi dengan ffprobe (durasi harus ≈ metadata sumber, audio tidak boleh hilang). Video non-H.264 (mis. AV1/VP9/HEVC) ditranscode ke H.264 8-bit + AAC, dan semua video di-remux dengan `faststart` agar bisa diputar WhatsApp.
 - Availability yt-dlp di-cache; jika tidak ada, command langsung menjawab tanpa memanggil proses.
 - Error dipetakan ke pesan pengguna: URL invalid, host tidak didukung, terlalu besar, terlalu panjang, sibuk, FFmpeg hilang, verifikasi bot, batas usia, media tidak tersedia, format tidak tersedia, timeout, media tidak didukung, gagal umum.
 - Binary yt-dlp dicari di `BIN_DIR` lebih dulu, lalu `PATH`. Auto-install hanya aktif bila `YTDLP_AUTO_INSTALL=true` dan memakai rilis resmi GitHub + verifikasi checksum SHA-256.
 
 ---
 
-## 9. Peta Test (156)
+## 9. Peta Test (164)
 
 | File | Jumlah | Fokus |
 |---|---|---|
 | `tests/config.test.js` | 7 | Default, parsing, validasi env, batas angka |
 | `tests/database.test.js` | 7 | Settings, user/premium, grup, warning, audit, backup |
-| `tests/registry.test.js` | 5 | Manifest, alias, 35 command bawaan |
+| `tests/registry.test.js` | 6 | Manifest, alias, 35 command bawaan |
 | `tests/text.test.js` | 5 | Unwrap, extract, parse command |
 | `tests/jid.test.js` | 4 | Normalisasi, masking, varian pengirim |
 | `tests/group.test.js` | 4 | Admin detection, cache, anti-impersonasi LID |
 | `tests/middleware.test.js` | 8 | Compose, normalize, permission, maintenance, mode, scope, cooldown, rate limit |
-| `tests/handler.test.js` | 19 | Integrasi handler, queue, cache balasan |
+| `tests/handler.test.js` | 20 | Integrasi handler, queue, cache balasan |
 | `tests/queue.test.js` | 7 | Urutan, paralelisme, batas antrean |
 | `tests/messageCache.test.js` | 5 | TTL, eviction, recency |
 | `tests/locales.test.js` | 3 | Semua key dipakai ada di id+en, struktur sama, descriptionKey valid |
 | `tests/groupCommands.test.js` | 14 | kick/promote/demote/warn/warnings/mute/tagall/groupinfo/welcome/goodbye |
 | `tests/guard.test.js` | 11 | Pola link, admin exemption, bot bukan admin, warn→kick, flood, toggle |
 | `tests/media.test.js` | 12 | findMedia, sharp, sticker/toimg, batas ukuran, error |
-| `tests/downloader.test.js` | 27 | Validasi URL, SSRF, limit, cleanup, limiter, auto-install, klasifikasi error, command |
+| `tests/downloader.test.js` | 35 | Validasi URL, SSRF, limit, cleanup, limiter, auto-install, klasifikasi error, metadata single-run, kompatibilitas video WhatsApp, command |
 | `tests/backup.test.js` | 8 | Verifikasi, korup, restore, skema, retensi, command |
 | `tests/ban.test.js` | 8 | Ban user/grup, throttle notifikasi, proteksi, middleware, stats |
 

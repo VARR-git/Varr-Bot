@@ -146,7 +146,7 @@ Folder `services/`, `events/`, `plugins/`, dan driver `mysql.js` akan ditambahka
 - Backup SQLite terverifikasi + restore in-place tanpa restart (`.backup`, `.restore`).
 - `.ban` / `.unban` (pengguna & grup), `.stats`, middleware `banned`.
 - i18n ID/EN lengkap untuk semua command Phase 2 + test penjaga drift key.
-- Test: 156 hijau (grup, guard, media, downloader, backup, ban, locale, middleware, handler).
+- Test: 159 hijau (grup, guard, media, downloader, backup, ban, locale, middleware, handler).
 
 **Deviasi dari rencana awal:**
 

@@ -43,7 +43,9 @@ const ALLOWED_PORTS = new Set(['', '80', '443']);
 const MAX_URL_LENGTH = 2_048;
 const MAX_STDOUT_BYTES = 8 * 1024 * 1024;
 const MAX_STDERR_BYTES = 512 * 1024;
-const PROBE_TIMEOUT_MS = 45_000;
+const FFPROBE_TIMEOUT_MS = 30_000;
+const REMUX_TIMEOUT_MS = 60_000;
+const TRANSCODE_TIMEOUT_MS = 300_000;
 const TMP_MAX_AGE_MS = 6 * 60 * 60 * 1_000;
 const TMP_PREFIX = 'varr-';
 
@@ -180,6 +182,59 @@ function safeFileName(title, ext) {
 function isPathLike(value) {
   const text = String(value || '');
   return path.isAbsolute(text) || text.includes('/') || text.includes('\\');
+}
+
+const META_PREFIX = 'VARR:';
+const META_KEYS = new Set(['title', 'duration', 'acodec', 'uploader', 'islive', 'type', 'weburl']);
+
+/**
+ * Parse baris metadata yang dicetak yt-dlp lewat `--print before_dl:VARR:...`.
+ * Marker dipakai agar judul/uploader yang mengandung newline tetap terbaca.
+ *
+ * @param {string} output
+ * @returns {{title: string, durationSec: number, hasAudio: boolean, author: string, isLive: boolean, isPlaylist: boolean, webpageUrl: string}}
+ */
+function parseMetaOutput(output) {
+  const raw = {
+    title: '',
+    duration: '',
+    acodec: '',
+    uploader: '',
+    islive: '',
+    type: '',
+    weburl: '',
+  };
+
+  let current = null;
+
+  for (const line of String(output || '').split(/\r?\n/)) {
+    const idx = line.indexOf(META_PREFIX);
+
+    if (idx !== -1) {
+      const rest = line.slice(idx + META_PREFIX.length);
+      const sep = rest.indexOf(':');
+      const key = sep === -1 ? rest : rest.slice(0, sep);
+      const value = sep === -1 ? '' : rest.slice(sep + 1);
+
+      if (META_KEYS.has(key)) {
+        current = key;
+        raw[key] = value;
+        continue;
+      }
+    }
+
+    if (current) raw[current] += `${raw[current] ? '\n' : ''}${line}`;
+  }
+
+  return {
+    title: raw.title.trim(),
+    durationSec: Number(raw.duration) || 0,
+    hasAudio: !raw.acodec || raw.acodec.toLowerCase() !== 'none',
+    author: raw.uploader.trim(),
+    isLive: /^(true|1)$/i.test(raw.islive.trim()),
+    isPlaylist: raw.type.trim().toLowerCase() === 'playlist',
+    webpageUrl: raw.weburl.trim(),
+  };
 }
 
 /**
@@ -553,10 +608,12 @@ function createLimiter({ concurrency = 2, maxQueue = 10 } = {}) {
  *
  * @param {string} file
  * @param {string[]} args
- * @param {{timeoutMs?: number}} [options]
+ * @param {{timeoutMs?: number, onStdout?: (chunk: string, stdout: string) => boolean}} [options]
+ *   `onStdout` dipanggil setiap ada data stdout; mengembalikan `true` untuk
+ *   menghentikan proses (mis. metadata sudah melanggar batas durasi).
  * @returns {Promise<{code: number|null, stdout: string, stderr: string, error: string|null}>}
  */
-function runProcess(file, args, { timeoutMs = 120_000 } = {}) {
+function runProcess(file, args, { timeoutMs = 120_000, onStdout } = {}) {
   return new Promise((resolve) => {
     let settled = false;
     let stdout = '';
@@ -628,20 +685,36 @@ function runProcess(file, args, { timeoutMs = 120_000 } = {}) {
       return killPromise;
     };
 
-    timer = setTimeout(() => {
-      forcedResult = { code: null, stdout, stderr, error: `timeout ${timeoutMs}ms` };
+    const abortWith = (error) => {
+      if (forcedResult) return;
+      forcedResult = { code: null, stdout, stderr, error };
       killTree().finally(() => finish(forcedResult));
+    };
+
+    timer = setTimeout(() => {
+      abortWith(`timeout ${timeoutMs}ms`);
     }, Math.max(1_000, timeoutMs));
     timer.unref?.();
 
     child.stdout?.on('data', (chunk) => {
       stdoutBytes += chunk.length;
       if (stdoutBytes > MAX_STDOUT_BYTES) {
-        forcedResult = { code: null, stdout, stderr, error: 'output stdout terlalu besar' };
-        killTree().finally(() => finish(forcedResult));
+        abortWith('output stdout terlalu besar');
         return;
       }
-      stdout += chunk.toString();
+
+      const text = chunk.toString();
+      stdout += text;
+
+      if (typeof onStdout === 'function' && !forcedResult) {
+        let abort = false;
+        try {
+          abort = Boolean(onStdout(text, stdout));
+        } catch {
+          // Callback tidak boleh menjatuhkan proses.
+        }
+        if (abort) abortWith('aborted by caller');
+      }
     });
 
     child.stderr?.on('data', (chunk) => {
@@ -732,6 +805,30 @@ function createDownloaderService({
   function resolveFfmpeg() {
     return resolveBinaryPath({
       binary: ffmpegPath,
+      binDir,
+      platform: process.platform,
+      fsImpl,
+    });
+  }
+
+  /**
+   * ffprobe biasanya satu paket dengan ffmpeg. Jika FFMPEG_PATH menunjuk file
+   * absolut, cari ffprobe di folder yang sama.
+   *
+   * @returns {string}
+   */
+  function resolveFfprobe() {
+    const ffmpeg = resolveFfmpeg();
+
+    if (isPathLike(ffmpeg)) {
+      return path.join(
+        path.dirname(ffmpeg),
+        process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe',
+      );
+    }
+
+    return resolveBinaryPath({
+      binary: 'ffprobe',
       binDir,
       platform: process.platform,
       fsImpl,
@@ -953,75 +1050,6 @@ function createDownloaderService({
   }
 
   /**
-   * @param {string} url
-   * @returns {Promise<object>}
-   */
-  async function probe(url) {
-    const result = await runCommand(
-      resolveBinary(),
-      [
-        '--ignore-config',
-        '--no-cache-dir',
-        '-J',
-        '--no-playlist',
-        '--no-warnings',
-        '--skip-download',
-        '--no-progress',
-        url,
-      ],
-      { timeoutMs: PROBE_TIMEOUT_MS },
-    );
-
-    if (result.code !== 0 || !String(result.stdout || '').trim()) {
-      const classified = classifyFailure(result);
-      if (classified) throw classified;
-
-      throw new AppError(
-        'DOWNLOAD_FAILED',
-        `Probe media gagal: ${result.error || sanitizeProcessError(result.stderr)}`,
-      );
-    }
-
-    let info = null;
-    const output = String(result.stdout).trim();
-
-    try {
-      info = JSON.parse(output);
-    } catch {
-      // `-J` menulis satu baris JSON; ambil baris terakhir yang valid.
-      for (const line of output.split(/\r?\n/).reverse()) {
-        if (!line.trim().startsWith('{')) continue;
-        try {
-          info = JSON.parse(line);
-          break;
-        } catch {
-          // Baris berikutnya.
-        }
-      }
-    }
-
-    if (!info || typeof info !== 'object') {
-      throw new AppError('DOWNLOAD_FAILED', 'Metadata media tidak bisa dibaca.');
-    }
-
-    return info;
-  }
-
-  /**
-   * @param {object} info
-   * @returns {{title: string, author: string, durationSec: number}}
-   */
-  function summarize(info) {
-    const title = String(info.title || info.fulltitle || '').trim()
-      || String(info.id || '').trim()
-      || '';
-    const author = String(info.uploader || info.channel || info.creator || '').trim();
-    const durationSec = Number(info.duration) || 0;
-
-    return { title, author, durationSec };
-  }
-
-  /**
    * Cari file hasil unduhan yang ekstensinya sesuai. File lain (mis. gambar
    * slideshow TikTok) dianggap media tidak didukung.
    *
@@ -1069,7 +1097,165 @@ function createDownloaderService({
   }
 
   /**
+   * @param {string} file
+   * @returns {number}
+   */
+  function fileSize(file) {
+    try {
+      const stat = fsImpl.statSync(file);
+      return stat.isFile() ? stat.size : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * Baca stream + durasi container dengan ffprobe.
+   *
+   * @param {string} file
+   * @returns {Promise<{streams: object[], format: object}|null>}
+   */
+  async function probeVideoInfo(file) {
+    const result = await runCommand(
+      resolveFfprobe(),
+      ['-v', 'error', '-print_format', 'json', '-show_streams', '-show_format', file],
+      { timeoutMs: FFPROBE_TIMEOUT_MS },
+    );
+
+    if (result.code !== 0 || !String(result.stdout || '').trim()) return null;
+
+    try {
+      const parsed = JSON.parse(String(result.stdout));
+      if (!parsed || typeof parsed !== 'object') return null;
+      return {
+        streams: Array.isArray(parsed.streams) ? parsed.streams : [],
+        format: parsed.format && typeof parsed.format === 'object' ? parsed.format : {},
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * WhatsApp hanya bisa memutar MP4 dengan video H.264 8-bit (yuv420p) dan
+   * audio AAC. yt-dlp secara default memilih AV1/VP9 karena kualitasnya lebih
+   * tinggi, jadi hasilnya harus dinormalisasi sebelum dikirim.
+   *
+   * - H.264/AAC → remux cepat (`-c copy`) + faststart.
+   * - Codec lain (AV1/VP9/HEVC/AAC selain mp4a) → transcode ke H.264/AAC.
+   *
+   * Selain normalisasi codec, file juga divalidasi: durasi hasil harus sesuai
+   * dengan metadata sumber (mendeteksi unduhan terpotong) dan audio tidak boleh
+   * hilang bila sumbernya punya audio.
+   *
+   * @param {string} file
+   * @param {string} workDir
+   * @param {{expectedDuration?: number, expectedAudio?: boolean}} [expect]
+   * @returns {Promise<string>} path file yang siap dikirim
+   */
+  async function makeWhatsAppVideo(file, workDir, expect = {}) {
+    const info = await probeVideoInfo(file);
+
+    if (!info) {
+      logger?.warn?.(
+        { ffprobe: resolveFfprobe() },
+        'ffprobe tidak tersedia; kompatibilitas video WhatsApp tidak diverifikasi',
+      );
+      return file;
+    }
+
+    const video = info.streams.find((stream) => stream.codec_type === 'video');
+    const audio = info.streams.find((stream) => stream.codec_type === 'audio');
+
+    if (!video) {
+      throw new AppError('DOWNLOAD_UNSUPPORTED_MEDIA', 'File hasil unduhan tidak berisi video.');
+    }
+
+    const expectedDuration = Number(expect.expectedDuration) || 0;
+    const actualDuration = Number(video.duration ?? info.format.duration ?? 0);
+
+    if (expectedDuration > 0 && actualDuration > 0) {
+      const ratio = actualDuration / expectedDuration;
+      if (ratio < 0.9 || ratio > 1.1) {
+        throw new AppError(
+          'DOWNLOAD_FAILED',
+          `Unduhan tampak terpotong: durasi ${formatClock(actualDuration)} dari ${formatClock(expectedDuration)}.`,
+        );
+      }
+    }
+
+    if (expect.expectedAudio && !audio) {
+      throw new AppError(
+        'DOWNLOAD_FAILED',
+        'Audio video hilang pada hasil unduhan.',
+      );
+    }
+
+    const videoOk = video.codec_name === 'h264'
+      && ['yuv420p', 'yuvj420p'].includes(String(video.pix_fmt || ''));
+    const audioOk = !audio || audio.codec_name === 'aac';
+    const output = path.join(workDir, 'whatsapp.mp4');
+    const ffmpeg = resolveFfmpeg();
+
+    if (videoOk && audioOk) {
+      const remux = await runCommand(ffmpeg, [
+        '-hide_banner', '-loglevel', 'error', '-y',
+        '-i', file,
+        '-map', '0:v:0', '-map', '0:a:0?',
+        '-c', 'copy',
+        '-movflags', '+faststart',
+        output,
+      ], { timeoutMs: REMUX_TIMEOUT_MS });
+
+      if (remux.code === 0 && fileSize(output) > 0) return output;
+
+      logger?.warn?.(
+        { error: sanitizeProcessError(remux.stderr) },
+        'Remux faststart gagal; memakai file asli',
+      );
+      return file;
+    }
+
+    logger?.info?.(
+      {
+        videoCodec: video.codec_name || null,
+        pixFmt: video.pix_fmt || null,
+        audioCodec: audio?.codec_name || null,
+      },
+      'Video tidak kompatibel dengan WhatsApp; transcode ke H.264/AAC',
+    );
+
+    const transcode = await runCommand(ffmpeg, [
+      '-hide_banner', '-loglevel', 'error', '-y',
+      '-i', file,
+      '-map', '0:v:0', '-map', '0:a:0?',
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-crf', '23',
+      '-pix_fmt', 'yuv420p',
+      '-vf', "scale='min(1920,iw)':-2",
+      '-c:a', 'aac',
+      '-b:a', '128k',
+      '-movflags', '+faststart',
+      output,
+    ], { timeoutMs: TRANSCODE_TIMEOUT_MS });
+
+    if (transcode.code !== 0 || fileSize(output) === 0) {
+      throw new AppError(
+        'DOWNLOAD_FORMAT',
+        `Video tidak bisa dikonversi ke format WhatsApp: ${sanitizeProcessError(transcode.stderr)}`,
+      );
+    }
+
+    return output;
+  }
+
+  /**
    * Unduh media dan kembalikan buffer. Direktori temporary selalu dihapus.
+   *
+   * Metadata sumber dikumpulkan lewat `--print before_dl:` dalam proses yt-dlp
+   * yang **sama** dengan unduhan, jadi ekstraksi hanya sekali — lebih cepat
+   * daripada memanggil yt-dlp dua kali (probe lalu unduh).
    *
    * @param {object} options
    * @param {string} options.url
@@ -1088,6 +1274,7 @@ function createDownloaderService({
 
     const workDir = fsImpl.mkdtempSync(path.join(tmpDir, TMP_PREFIX));
     const template = path.join(workDir, 'media.%(ext)s');
+
     const args = [
       '--ignore-config',
       '--no-cache-dir',
@@ -1099,6 +1286,14 @@ function createDownloaderService({
       '--retries', '2',
       '--max-filesize', String(maxBytes),
       '-o', template,
+      // Metadata dicetak sebelum unduhan dimulai.
+      '--print', `before_dl:${META_PREFIX}title:%(title)s`,
+      '--print', `before_dl:${META_PREFIX}duration:%(duration)s`,
+      '--print', `before_dl:${META_PREFIX}acodec:%(acodec)s`,
+      '--print', `before_dl:${META_PREFIX}uploader:%(uploader)s`,
+      '--print', `before_dl:${META_PREFIX}islive:%(is_live)s`,
+      '--print', `before_dl:${META_PREFIX}type:%(_type)s`,
+      '--print', `before_dl:${META_PREFIX}weburl:%(webpage_url)s`,
     ];
 
     const resolvedFfmpeg = resolveFfmpeg();
@@ -1111,20 +1306,50 @@ function createDownloaderService({
     if (kind === 'audio') {
       args.push('-x', '--audio-format', 'mp3', '--audio-quality', '5');
     } else {
-      // Tanpa FFmpeg, pilih format progresif agar tidak perlu merge.
+      // Prioritaskan format progresif (satu file, H.264+AAC) supaya cepat dan
+      // tidak butuh merge; batasi 720p agar ukuran kecil dan unduhan cepat.
+      // WhatsApp tidak bisa memutar AV1/VP9, jadi makeWhatsAppVideo akan
+      // transcode bila sumber hanya menyediakan codec lain.
+      const progressive = ffmpeg.available
+        ? 'b[ext=mp4][vcodec^=avc1][height<=720]'
+          + '/b[ext=mp4][height<=720]'
+          + '/bv*[vcodec^=avc1][height<=720][ext=mp4]+ba[acodec^=mp4a][ext=m4a]'
+          + '/b[ext=mp4]/b'
+        : 'b[ext=mp4][vcodec^=avc1][height<=720]'
+          + '/b[ext=mp4]/b';
+
       args.push(
-        '-f',
-        ffmpeg.available
-          ? 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b'
-          : 'b[ext=mp4]/b',
+        '-f', progressive,
+        '-S', 'res:720',
         '--merge-output-format', 'mp4',
       );
     }
 
     args.push(url);
 
+    let abortedTooLong = false;
+
+    const onStdout = (_chunk, stdoutSoFar) => {
+      const match = /VARR:duration:([0-9]+(?:\.[0-9]+)?)/.exec(stdoutSoFar);
+      if (match && Number(match[1]) > maxDurationSec) {
+        abortedTooLong = true;
+        return true;
+      }
+      return false;
+    };
+
     try {
-      const result = await runCommand(resolveBinary(), args, { timeoutMs });
+      const result = await runCommand(resolveBinary(), args, { timeoutMs, onStdout });
+      const meta = parseMetaOutput(result.stdout || '');
+
+      if (abortedTooLong) {
+        throw new AppError(
+          'DOWNLOAD_TOO_LONG',
+          `Durasi ${formatClock(meta.durationSec)} melebihi batas ${formatClock(maxDurationSec)}.`,
+          undefined,
+          { duration: formatClock(meta.durationSec), max: formatClock(maxDurationSec) },
+        );
+      }
 
       if (result.code !== 0) {
         const classified = classifyFailure(result);
@@ -1141,13 +1366,48 @@ function createDownloaderService({
         );
       }
 
-      const output = pickOutputFile(
+      if (meta.isLive) {
+        throw new AppError('DOWNLOAD_UNAVAILABLE', 'Live stream tidak bisa diunduh.');
+      }
+
+      if (meta.isPlaylist) {
+        throw new AppError(
+          'DOWNLOAD_UNSUPPORTED_MEDIA',
+          'Konten berupa playlist/slideshow tidak didukung.',
+        );
+      }
+
+      // Fallback bila onStdout tidak sempat mencegat (mis. runner uji).
+      if (meta.durationSec > maxDurationSec) {
+        throw new AppError(
+          'DOWNLOAD_TOO_LONG',
+          `Durasi ${formatClock(meta.durationSec)} melebihi batas ${formatClock(maxDurationSec)}.`,
+          undefined,
+          { duration: formatClock(meta.durationSec), max: formatClock(maxDurationSec) },
+        );
+      }
+
+      let output = pickOutputFile(
         workDir,
         kind === 'audio' ? ['mp3'] : ['mp4'],
       );
 
       if (!output) {
         throw new AppError('DOWNLOAD_FAILED', 'File hasil unduhan tidak ditemukan.');
+      }
+
+      if (kind === 'video') {
+        const compatible = await makeWhatsAppVideo(output.path, workDir, {
+          expectedDuration: meta.durationSec,
+          expectedAudio: meta.hasAudio,
+        });
+        if (compatible !== output.path) {
+          output = { path: compatible, ext: 'mp4', size: fileSize(compatible) };
+        }
+      }
+
+      if (fileSize(output.path) === 0) {
+        throw new AppError('DOWNLOAD_FAILED', 'File hasil unduhan kosong atau tidak terbaca.');
       }
 
       if (output.size > maxBytes) {
@@ -1168,6 +1428,7 @@ function createDownloaderService({
         sizeBytes: buffer.length,
         platform,
         kind,
+        meta,
       };
     } finally {
       try {
@@ -1179,7 +1440,7 @@ function createDownloaderService({
   }
 
   /**
-   * Alur lengkap: validasi → cek binary → probe → batas durasi → unduh.
+   * Alur lengkap: validasi → cek binary → unduh (metadata + media sekali jalan).
    *
    * @param {object} options
    * @param {string} options.rawUrl
@@ -1199,31 +1460,10 @@ function createDownloaderService({
         );
       }
 
-      const info = await probe(url);
-      const summary = summarize(info);
-
-      if (info.is_live) {
-        throw new AppError('DOWNLOAD_UNAVAILABLE', 'Live stream tidak bisa diunduh.');
-      }
-
-      if (info._type === 'playlist' || Array.isArray(info.entries)) {
-        throw new AppError(
-          'DOWNLOAD_UNSUPPORTED_MEDIA',
-          'Konten berupa playlist/slideshow tidak didukung.',
-        );
-      }
-
-      if (summary.durationSec > maxDurationSec) {
-        throw new AppError(
-          'DOWNLOAD_TOO_LONG',
-          `Durasi ${formatClock(summary.durationSec)} melebihi batas ${formatClock(maxDurationSec)}.`,
-          undefined,
-          { duration: formatClock(summary.durationSec), max: formatClock(maxDurationSec) },
-        );
-      }
-
       const media = await downloadMedia({ url, kind, platform });
-      const title = summary.title || 'media';
+      const meta = media.meta;
+
+      const title = meta.title || 'media';
       const fileName = safeFileName(title, media.ext);
 
       logger?.info?.(
@@ -1232,7 +1472,7 @@ function createDownloaderService({
           kind,
           host: new URL(url).hostname,
           sizeBytes: media.sizeBytes,
-          durationSec: summary.durationSec,
+          durationSec: meta.durationSec,
         },
         'Download media selesai',
       );
@@ -1240,10 +1480,10 @@ function createDownloaderService({
       return {
         ...media,
         title,
-        author: summary.author || null,
-        durationSec: summary.durationSec,
+        author: meta.author || null,
+        durationSec: meta.durationSec,
         fileName,
-        webpageUrl: info.webpage_url || url,
+        webpageUrl: meta.webpageUrl || url,
       };
     });
   }
@@ -1284,6 +1524,7 @@ module.exports = {
   httpsDownload,
   installYtDlpRelease,
   isPrivateHost,
+  parseMetaOutput,
   releaseAssetName,
   resolveBinaryPath,
   runProcess,
