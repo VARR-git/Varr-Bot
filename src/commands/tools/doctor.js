@@ -8,24 +8,25 @@ const { spawnSync } = require('node:child_process');
 const { formatBytes, formatDuration } = require('../../utils/format');
 
 /**
- * @returns {{ok: boolean, version: string|null}}
+ * @param {string} [binary]
+ * @returns {{available: boolean, version: string|null}}
  */
-function checkFfmpeg() {
+function checkFfmpeg(binary = 'ffmpeg') {
   try {
-    const result = spawnSync('ffmpeg', ['-version'], {
+    const result = spawnSync(binary, ['-version'], {
       encoding: 'utf8',
       timeout: 3_000,
       windowsHide: true,
     });
 
     if (result.error || result.status !== 0) {
-      return { ok: false, version: null };
+      return { available: false, version: null };
     }
 
     const match = String(result.stdout || '').match(/ffmpeg version (\S+)/i);
-    return { ok: true, version: match ? match[1] : 'tersedia' };
+    return { available: true, version: match ? match[1] : 'tersedia' };
   } catch {
-    return { ok: false, version: null };
+    return { available: false, version: null };
   }
 }
 
@@ -89,8 +90,12 @@ module.exports = {
       lines.push(`${ctx.t('doctor.disk')}: ${ctx.t('doctor.diskError', { error: error.message })}`);
     }
 
-    const ffmpeg = checkFfmpeg();
-    lines.push(`${ctx.t('doctor.ffmpeg')}: ${ffmpeg.ok
+    const downloader = ctx.services.downloader;
+    const ffmpeg = downloader?.ffmpegStatus
+      ? await downloader.ffmpegStatus({ force: true })
+      : checkFfmpeg(ctx.config.download?.ffmpegPath || 'ffmpeg');
+
+    lines.push(`${ctx.t('doctor.ffmpeg')}: ${ffmpeg.available
       ? ctx.t('doctor.ffmpegOk', { version: ffmpeg.version })
       : ctx.t('doctor.ffmpegMissing')}`);
 
@@ -99,9 +104,8 @@ module.exports = {
       ? sharp.version
       : ctx.t('doctor.sharpMissing')}`);
 
-    const downloader = ctx.services.downloader;
     let ytdlp = { available: false, version: null };
-    if (downloader) ytdlp = await downloader.available();
+    if (downloader) ytdlp = await downloader.available({ force: true });
     lines.push(`${ctx.t('doctor.ytdlp')}: ${ytdlp.available
       ? ctx.t('doctor.ytdlpOk', { version: ytdlp.version || 'tersedia' })
       : ctx.t('doctor.ytdlpMissing')}`);
@@ -116,18 +120,25 @@ module.exports = {
     }
 
     try {
-      const files = fs.readdirSync(ctx.config.tmpDir)
-        .filter((name) => name.startsWith('varr-'));
-      const size = files.reduce((total, name) => {
-        try {
-          return total + fs.statSync(path.join(ctx.config.tmpDir, name)).size;
-        } catch {
-          return total;
-        }
-      }, 0);
+      let tmp = null;
+      if (downloader?.tmpStats) {
+        tmp = downloader.tmpStats();
+      } else {
+        const files = fs.readdirSync(ctx.config.tmpDir)
+          .filter((name) => name.startsWith('varr-'));
+        const size = files.reduce((total, name) => {
+          try {
+            return total + fs.statSync(path.join(ctx.config.tmpDir, name)).size;
+          } catch {
+            return total;
+          }
+        }, 0);
+        tmp = { count: files.length, sizeBytes: size };
+      }
+
       lines.push(`${ctx.t('doctor.tmp')}: ${ctx.t('doctor.tmpOk', {
-        count: files.length,
-        size: formatBytes(size),
+        count: tmp.count,
+        size: formatBytes(tmp.sizeBytes),
       })}`);
     } catch {
       lines.push(`${ctx.t('doctor.tmp')}: ${ctx.t('doctor.tmpOk', { count: 0, size: '0 B' })}`);

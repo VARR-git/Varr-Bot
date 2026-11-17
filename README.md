@@ -2,7 +2,7 @@
 
 Bot WhatsApp modular berbasis [Baileys](https://github.com/WhiskeySockets/Baileys) untuk kebutuhan grup, produktivitas, media, AI, dan otomasi. Varr-Bot dirancang agar mudah dirawat, aman dipakai, dan gampang ditambah fitur baru lewat sistem plugin.
 
-> **Status:** **Phase 2 — grup, guard, media & downloader selesai** (`v0.2.0`). Fondasi Phase 1 tetap dipakai; Phase 2 menambah 28 command (total 35) untuk grup, guard, media, downloader, backup & restore terverifikasi, ban/unban, `.stats`, serta migrasi database v2. 142 test hijau.
+> **Status:** **Phase 2 — grup, guard, media & downloader selesai** (`v0.2.0`). Fondasi Phase 1 tetap dipakai; Phase 2 menambah 28 command (total 35) untuk grup, guard, media, downloader, backup & restore terverifikasi, ban/unban, `.stats`, serta migrasi database v2. 156 test hijau.
 
 ## Kenapa Varr-Bot?
 
@@ -104,7 +104,9 @@ Admin grup dan owner selalu dikecualikan dari guard. Eskalasi: warning → kelua
 | `.ytmp4 <url>` | Video YouTube → MP4 |
 | `.tiktok <url>` | Video TikTok tanpa watermark |
 
-Downloader memakai **yt-dlp** + **FFmpeg**. Batas ukuran, durasi, timeout, dan jumlah unduhan paralel bisa diatur lewat `.env`. Jika yt-dlp tidak terpasang, command memberi tahu dan `.doctor` melaporkannya.
+Downloader memakai **yt-dlp** + **FFmpeg**. Batas ukuran, durasi, timeout, jumlah unduhan paralel, dan antrean bisa diatur lewat `.env`. Command downloader punya timeout internal sendiri, jadi tidak terpotong `COMMAND_TIMEOUT_MS` yang lebih pendek.
+
+Urutan pencarian binary: `BIN_DIR` → `PATH` (atau path absolut di `YTDLP_PATH`). Jika `YTDLP_AUTO_INSTALL=true` dan yt-dlp belum ada, bot memasangnya sekali dari rilis resmi GitHub dengan verifikasi checksum SHA-256; fitur ini nonaktif secara default. `FFMPEG_PATH` bisa diisi path absolut bila FFmpeg tidak ada di `PATH`. Untuk video yang butuh login/usia, isi `YTDLP_COOKIES_FILE` dengan file cookies format Netscape. Jika dependensi tidak siap, command memberi tahu dan `.doctor` melaporkannya.
 
 Mode: **public** = semua orang, **private** = owner + admin grup, **self** = owner saja.
 
@@ -113,9 +115,11 @@ Mode: **public** = semua orang, **private** = owner + admin grup, **self** = own
 Prasyarat:
 
 - **Node.js 20+** (Docker memakai Node.js 22 LTS).
-- **yt-dlp** di `PATH` (atau `YTDLP_PATH`) untuk command downloader.
-- **FFmpeg** untuk konversi audio/video (`ytmp3` butuh ini).
+- **yt-dlp** di `PATH`, di `BIN_DIR`, atau lewat `YTDLP_PATH` untuk command downloader.
+- **FFmpeg** untuk konversi audio/video (`ytmp3` butuh ini); bisa lewat `FFMPEG_PATH`.
 - **sharp** terpasang otomatis lewat `npm install` (dipakai sticker/toimg).
+
+> Di Windows, tutup dan buka ulang terminal setelah memasang yt-dlp/FFmpeg agar perubahan `PATH` terpakai. Alternatifnya isi `YTDLP_PATH`/`FFMPEG_PATH` dengan path absolut atau taruh binary di `BIN_DIR`.
 
 ```bash
 npm install
@@ -197,7 +201,7 @@ Untuk Pterodactyl, baca [docs/DECISIONS.md](docs/DECISIONS.md).
 │   ├── services/             # guard, groupEvents, media, downloader, warnings
 │   ├── locales/              # id.json, en.json
 │   └── utils/                # text, jid, group, groupTarget, groupModeration, backups, ...
-├── tests/                    # node:test (142 test)
+├── tests/                    # node:test (156 test)
 ├── docs/
 ├── data/                     # runtime DB, backup, tmp (tidak di-commit)
 ├── auth_info_baileys/        # session WhatsApp (tidak di-commit)

@@ -313,13 +313,17 @@ data/
 - IP literal, `localhost`, `.local`, `.internal`, dan `.home.arpa` ditolak sebelum yt-dlp dipanggil (mitigasi SSRF).
 - Batas ukuran (`DOWNLOAD_MAX_MB`), durasi (`DOWNLOAD_MAX_DURATION_SEC`), timeout proses, dan jumlah unduhan paralel.
 - File temporary di `TMP_DIR` selalu dihapus; file sisa lebih dari 6 jam dibersihkan saat service dipakai.
+- Setiap unduhan memakai direktori kerja `mkdtemp` sendiri dan yt-dlp dijalankan dengan `--ignore-config` + `--no-cache-dir`.
+- Binary dicari di `BIN_DIR` lebih dulu, lalu `PATH`/path absolut. Auto-install **opt-in** (`YTDLP_AUTO_INSTALL=true`) hanya dari rilis resmi GitHub dengan verifikasi checksum SHA-256.
+- Command downloader memakai `timeoutMs` per command (660 detik) agar tidak dipotong `COMMAND_TIMEOUT_MS` global.
 - yt-dlp tidak tersedia → command menjawab dengan pesan jelas dan `.doctor` melaporkannya, bukan crash.
 
 **Konsekuensi:**
 
 - Deployment perlu memasang yt-dlp. Image Docker sudah menyertakannya (paket Debian), tetapi versi Debian bisa tertinggal; dokumentasikan cara memperbarui.
 - Kegagalan situs sumber tetap mungkin; pesan error dibuat ramah dan tidak membocorkan URL ke log.
-- Tidak ada test end-to-end yang benar-benar mengunduh (butuh jaringan + binary); test memakai `runCommand` palsu dan memverifikasi argumen, batas, serta cleanup.
+- URL awal di-allowlist, tetapi yt-dlp tetap dapat mengikuti redirect/URL internal milik platform. Ini risiko SSRF residual yang tidak sepenuhnya hilang; untuk jaminan lebih ketat, jalankan downloader dengan egress allowlist/container terpisah.
+- Test otomatis memakai `runCommand` palsu dan memverifikasi argumen, batas, serta cleanup. Unduhan nyata (YouTube MP3/MP4, TikTok, auto-install rilis resmi) diverifikasi manual sekali dan tidak dijalankan di CI.
 
 ---
 

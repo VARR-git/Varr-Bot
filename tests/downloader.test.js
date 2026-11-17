@@ -13,10 +13,15 @@ const {
 } = require('./helpers/bot');
 const { AppError } = require('../src/core/errors');
 const {
+  classifyFailure,
   createDownloaderService,
   createLimiter,
   formatClock,
+  installYtDlpRelease,
   isPrivateHost,
+  releaseAssetName,
+  resolveBinaryPath,
+  runProcess,
   safeFileName,
   validateMediaUrl,
 } = require('../src/services/downloader');
@@ -33,6 +38,10 @@ function makeConfig(dir, overrides = {}) {
     tmpDir: path.join(dir, 'tmp'),
     download: {
       binary: 'yt-dlp',
+      binDir: path.join(dir, 'bin'),
+      autoInstall: false,
+      ffmpegPath: 'ffmpeg',
+      cookiesFile: '',
       maxMb: 1,
       maxDurationSec: 900,
       timeoutMs: 5_000,
@@ -51,6 +60,15 @@ function createFakeRunner({ duration = 30, writeBytes = 1_000, version = '2026.0
 
     if (args.includes('--version')) {
       return { code: 0, stdout: `${version}\n`, stderr: '', error: null };
+    }
+
+    if (args[0] === '-version') {
+      return {
+        code: 0,
+        stdout: 'ffmpeg version 9.0.2 Copyright (c) 2000-2026 the FFmpeg developers\n',
+        stderr: '',
+        error: null,
+      };
     }
 
     if (args.includes('-J')) {
@@ -274,12 +292,20 @@ test('downloader: kegagalan probe menjadi DOWNLOAD_FAILED', async (t) => {
   const service = createDownloaderService({
     config: makeConfig(dir),
     logger: silentLogger,
-    runCommand: async () => ({ code: 1, stdout: '', stderr: 'Video unavailable', error: null }),
+    runCommand: async (file, args) => {
+      if (args.includes('--version')) {
+        return { code: 0, stdout: '2026.01.01\n', stderr: '', error: null };
+      }
+      if (args.includes('-J')) {
+        return { code: 1, stdout: '', stderr: 'Video unavailable', error: null };
+      }
+      return { code: 0, stdout: '', stderr: '', error: null };
+    },
   });
 
   await assert.rejects(
     () => service.fetch({ rawUrl: 'https://youtu.be/abc', kind: 'audio', platform: 'youtube' }),
-    (error) => error.code === 'DOWNLOAD_FAILED',
+    (error) => error.code === 'DOWNLOAD_UNAVAILABLE',
   );
 });
 
@@ -411,4 +437,340 @@ test('downloader: error durasi dan URL diterjemahkan ke pesan pengguna', async (
     makeMessage({ chatId: GROUP, sender: MEMBER, text: '.ytmp3 bukan-url' }),
   );
   assert.match(lastText(bot), /URL tidak valid/);
+});
+
+test('downloader: resolveBinaryPath memprioritaskan BIN_DIR', (t) => {
+  const dir = tempDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const binDir = path.join(dir, 'bin');
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.writeFileSync(path.join(binDir, 'yt-dlp.exe'), '');
+
+  assert.equal(
+    resolveBinaryPath({ binary: 'yt-dlp', binDir, platform: 'win32' }),
+    path.join(binDir, 'yt-dlp.exe'),
+  );
+  assert.equal(
+    resolveBinaryPath({ binary: 'yt-dlp', binDir, platform: 'linux' }),
+    'yt-dlp',
+  );
+  assert.equal(
+    resolveBinaryPath({ binary: '/opt/yt-dlp', binDir, platform: 'linux' }),
+    '/opt/yt-dlp',
+  );
+});
+
+test('downloader: auto-install hanya berjalan saat diaktifkan', async (t) => {
+  const dir = tempDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  let installed = false;
+  let installerCalls = 0;
+
+  const runCommand = async (file, args) => {
+    if (args.includes('--version')) {
+      return installed
+        ? { code: 0, stdout: '2026.11.15\n', stderr: '', error: null }
+        : { code: 127, stdout: '', stderr: '', error: 'spawn yt-dlp ENOENT' };
+    }
+    return { code: 0, stdout: '', stderr: '', error: null };
+  };
+
+  const installBinary = async ({ binDir }) => {
+    installerCalls += 1;
+    installed = true;
+    return path.join(binDir, 'yt-dlp.exe');
+  };
+
+  const disabled = createDownloaderService({
+    config: makeConfig(dir),
+    logger: silentLogger,
+    runCommand,
+    installBinary,
+  });
+  assert.equal((await disabled.available()).available, false);
+  assert.equal(installerCalls, 0);
+
+  const enabled = createDownloaderService({
+    config: makeConfig(dir, { autoInstall: true }),
+    logger: silentLogger,
+    runCommand,
+    installBinary,
+  });
+  const status = await enabled.available();
+
+  assert.equal(status.available, true);
+  assert.equal(installerCalls, 1);
+
+  installed = true;
+  await enabled.available();
+  assert.equal(installerCalls, 1, 'auto-install tidak boleh diulang terus-menerus');
+});
+
+test('downloader: availability negatif di-cache sampai force', async (t) => {
+  const dir = tempDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  let healthy = false;
+  let versionCalls = 0;
+
+  const service = createDownloaderService({
+    config: makeConfig(dir),
+    logger: silentLogger,
+    runCommand: async (file, args) => {
+      if (!args.includes('--version')) return { code: 0, stdout: '', stderr: '', error: null };
+      versionCalls += 1;
+      return healthy
+        ? { code: 0, stdout: '2026.11.15\n', stderr: '', error: null }
+        : { code: 127, stdout: '', stderr: '', error: 'spawn yt-dlp ENOENT' };
+    },
+  });
+
+  assert.equal((await service.available()).available, false);
+  healthy = true;
+  assert.equal((await service.available()).available, false, 'cache negatif harus dipakai');
+  assert.equal(versionCalls, 1);
+  assert.equal((await service.available({ force: true })).available, true);
+});
+
+test('downloader: audio ditolak saat FFmpeg tidak tersedia', async (t) => {
+  const dir = tempDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const calls = [];
+  const service = createDownloaderService({
+    config: makeConfig(dir),
+    logger: silentLogger,
+    runCommand: async (file, args) => {
+      calls.push(args);
+      if (args.includes('--version')) {
+        return { code: 0, stdout: '2026.01.01\n', stderr: '', error: null };
+      }
+      if (args[0] === '-version') {
+        return { code: 127, stdout: '', stderr: '', error: 'spawn ffmpeg ENOENT' };
+      }
+      if (args.includes('-J')) {
+        return {
+          code: 0,
+          stdout: JSON.stringify({ title: 'Uji', duration: 10 }),
+          stderr: '',
+          error: null,
+        };
+      }
+      return { code: 0, stdout: '', stderr: '', error: null };
+    },
+  });
+
+  await assert.rejects(
+    () => service.fetch({ rawUrl: 'https://youtu.be/abc', kind: 'audio', platform: 'youtube' }),
+    (error) => error.code === 'DOWNLOAD_FFMPEG_MISSING',
+  );
+  assert.equal(calls.some((args) => args.includes('-x')), false);
+});
+
+test('downloader: slideshow/foto ditolak sebagai media tidak didukung', async (t) => {
+  const dir = tempDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const service = createDownloaderService({
+    config: makeConfig(dir),
+    logger: silentLogger,
+    runCommand: async (file, args) => {
+      if (args.includes('--version')) {
+        return { code: 0, stdout: '2026.01.01\n', stderr: '', error: null };
+      }
+      if (args[0] === '-version') {
+        return { code: 0, stdout: 'ffmpeg version 9.0\n', stderr: '', error: null };
+      }
+      if (args.includes('-J')) {
+        return {
+          code: 0,
+          stdout: JSON.stringify({ title: 'Slideshow', duration: 10 }),
+          stderr: '',
+          error: null,
+        };
+      }
+
+      const template = args[args.indexOf('-o') + 1];
+      fs.writeFileSync(template.replace('%(ext)s', 'jpg'), Buffer.alloc(100, 1));
+      return { code: 0, stdout: '', stderr: '', error: null };
+    },
+  });
+
+  await assert.rejects(
+    () => service.fetch({
+      rawUrl: 'https://www.tiktok.com/@user/photo/123',
+      kind: 'video',
+      platform: 'tiktok',
+    }),
+    (error) => error.code === 'DOWNLOAD_UNSUPPORTED_MEDIA',
+  );
+
+  assert.deepEqual(fs.readdirSync(service.tmpDir), [], 'direktori kerja harus dibersihkan');
+});
+
+test('downloader: argumen keamanan dan cookies diteruskan ke yt-dlp', async (t) => {
+  const dir = tempDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const cookiesFile = path.join(dir, 'cookies.txt');
+  fs.writeFileSync(cookiesFile, '# Netscape HTTP Cookie File\n');
+
+  const runner = createFakeRunner();
+  const service = createDownloaderService({
+    config: makeConfig(dir, {
+      cookiesFile,
+      ffmpegPath: path.join(dir, 'ffmpeg-custom.exe'),
+    }),
+    logger: silentLogger,
+    runCommand: runner.run,
+  });
+
+  await service.fetch({
+    rawUrl: 'https://www.youtube.com/watch?v=abc',
+    kind: 'video',
+    platform: 'youtube',
+  });
+
+  const downloadCall = runner.calls.find((call) => call.args.includes('-o'));
+  assert.ok(downloadCall.args.includes('--ignore-config'));
+  assert.ok(downloadCall.args.includes('--no-cache-dir'));
+  assert.ok(downloadCall.args.includes('--cookies'));
+  assert.equal(downloadCall.args[downloadCall.args.indexOf('--cookies') + 1], cookiesFile);
+  assert.ok(downloadCall.args.includes('--ffmpeg-location'));
+  assert.equal(
+    downloadCall.args[downloadCall.args.indexOf('--ffmpeg-location') + 1],
+    path.join(dir, 'ffmpeg-custom.exe'),
+  );
+});
+
+test('downloader: klasifikasi error yt-dlp', () => {
+  const cases = [
+    [{ stderr: "Sign in to confirm you're not a bot" }, 'DOWNLOAD_BOT_CHECK'],
+    [{ stderr: 'This video is age-restricted' }, 'DOWNLOAD_AGE_RESTRICTED'],
+    [{ stderr: 'Private video. Sign in if you have access' }, 'DOWNLOAD_UNAVAILABLE'],
+    [{ stderr: 'Requested format is not available' }, 'DOWNLOAD_FORMAT'],
+    [{ error: 'timeout 5000ms' }, 'DOWNLOAD_TIMEOUT'],
+    [{ stderr: 'File is larger than max-filesize' }, 'DOWNLOAD_TOO_LARGE'],
+    [{ stderr: 'ffmpeg not found' }, 'DOWNLOAD_FFMPEG_MISSING'],
+    [{ stderr: 'some unknown failure' }, null],
+  ];
+
+  for (const [result, code] of cases) {
+    assert.equal(classifyFailure(result)?.code ?? null, code);
+  }
+});
+
+test('downloader: runProcess menghentikan proses saat timeout', async () => {
+  const result = await runProcess(
+    process.execPath,
+    ['-e', 'setTimeout(() => {}, 10_000)'],
+    { timeoutMs: 1_000 },
+  );
+
+  assert.equal(result.code, null);
+  assert.match(result.error, /timeout 1000ms/);
+});
+
+test('downloader: tmpStats dan pruneTmp menangani direktori rekursif', (t) => {
+  const dir = tempDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const tmpDir = path.join(dir, 'tmp');
+  const oldDir = path.join(tmpDir, 'varr-old');
+  fs.mkdirSync(oldDir, { recursive: true });
+  fs.writeFileSync(path.join(oldDir, 'nested.bin'), Buffer.alloc(64, 1));
+  fs.writeFileSync(path.join(tmpDir, 'varr-live.bin'), Buffer.alloc(36, 1));
+
+  const old = new Date(Date.now() - 7 * 60 * 60 * 1_000);
+  fs.utimesSync(oldDir, old, old);
+
+  const service = createDownloaderService({
+    config: makeConfig(dir),
+    logger: silentLogger,
+    runCommand: async () => ({ code: 0, stdout: '', stderr: '', error: null }),
+  });
+
+  assert.deepEqual(service.tmpStats(), { count: 2, sizeBytes: 100 });
+  assert.equal(service.pruneTmp(), 1);
+  assert.deepEqual(service.tmpStats(), { count: 1, sizeBytes: 36 });
+  assert.equal(fs.existsSync(oldDir), false);
+});
+
+test('downloader: installer resmi memverifikasi checksum SHA-256', async (t) => {
+  const dir = tempDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const binDir = path.join(dir, 'bin');
+  const asset = releaseAssetName('win32');
+  const expected = 'a'.repeat(64);
+
+  const download = async (url, destination) => {
+    fs.writeFileSync(
+      destination,
+      url.endsWith('SHA2-256SUMS') ? `${expected}  ${asset}\n` : 'binary',
+    );
+  };
+
+  const target = await installYtDlpRelease({
+    binDir,
+    platform: 'win32',
+    logger: silentLogger,
+    download,
+    hash: async () => expected,
+  });
+
+  assert.equal(target, path.join(binDir, 'yt-dlp.exe'));
+  assert.equal(fs.readFileSync(target, 'utf8'), 'binary');
+
+  await assert.rejects(
+    () => installYtDlpRelease({
+      binDir,
+      platform: 'win32',
+      logger: silentLogger,
+      download,
+      hash: async () => 'b'.repeat(64),
+    }),
+    /Checksum/,
+  );
+});
+
+test('downloader: kode error baru diterjemahkan ke pesan pengguna', async (t) => {
+  const stub = {
+    available: async () => ({ available: true, version: 'test' }),
+    async fetch() {
+      throw new AppError('DOWNLOAD_BOT_CHECK', 'bot check');
+    },
+  };
+
+  const bot = createTestBot({ downloader: stub });
+  t.after(() => bot.close());
+
+  await bot.handler.handleMessage(
+    bot.sock,
+    makeMessage({ chatId: GROUP, sender: MEMBER, text: '.ytmp3 https://youtu.be/abc' }),
+  );
+
+  assert.match(lastText(bot), /verifikasi bot/i);
+});
+
+test('downloader: pesan ffmpeg missing memakai prefix asli', async (t) => {
+  const stub = {
+    available: async () => ({ available: true, version: 'test' }),
+    async fetch() {
+      throw new AppError('DOWNLOAD_FFMPEG_MISSING', 'ffmpeg missing');
+    },
+  };
+
+  const bot = createTestBot({ downloader: stub });
+  t.after(() => bot.close());
+
+  await bot.handler.handleMessage(
+    bot.sock,
+    makeMessage({ chatId: GROUP, sender: MEMBER, text: '.ytmp3 https://youtu.be/abc' }),
+  );
+
+  assert.match(lastText(bot), /\.doctor/);
+  assert.doesNotMatch(lastText(bot), /\{prefix\}/);
 });

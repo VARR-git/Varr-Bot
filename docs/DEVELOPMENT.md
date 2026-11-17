@@ -283,7 +283,7 @@ Test wajib untuk perubahan pada:
 - handler atau error boundary;
 - key i18n.
 
-Saat ini ada 142 test. Jika `node --test tests` gagal karena `spawn EPERM` (lingkungan sandbox yang melarang child process), jalankan per file: `node tests/nama.test.js`.
+Saat ini ada 156 test. Jika `node --test tests` gagal karena `spawn EPERM` (lingkungan sandbox yang melarang child process), jalankan per file: `node tests/nama.test.js`.
 
 ---
 

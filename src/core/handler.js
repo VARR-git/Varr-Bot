@@ -255,9 +255,10 @@ function createMessageHandler({
    * @param {object} ctx
    */
   async function executeCommand(ctx) {
+    const timeoutMs = Number(ctx.command.timeoutMs) || config.commandTimeoutMs;
     const result = await withTimeout(
       Promise.resolve(ctx.command.execute(ctx)),
-      config.commandTimeoutMs,
+      timeoutMs,
       `command ${ctx.command.name}`,
     );
 

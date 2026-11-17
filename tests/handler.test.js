@@ -354,6 +354,26 @@ test('handler: command timeout dibalas dengan pesan jelas', async (t) => {
   assert.equal(bot.db.getStat('command:error'), 1);
 });
 
+test('handler: timeout per command mengalahkan timeout global', async (t) => {
+  const bot = createTestBot({ configOverrides: { commandTimeoutMs: 40 } });
+  t.after(() => bot.db.close());
+
+  bot.registry.register({
+    name: 'berat',
+    cooldown: 0,
+    timeoutMs: 1_000,
+    execute: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return 'selesai';
+    },
+  });
+
+  await bot.handler.handleMessage(bot.sock, makeMessage({ text: '.berat' }));
+
+  assert.equal(lastText(bot), 'selesai');
+  assert.equal(bot.db.getStat('command:error'), 0);
+});
+
 test('handler: kegagalan metadata grup tidak memblokir command', async (t) => {
   const bot = createTestBot({ groupMetadataError: true });
   t.after(() => bot.db.close());

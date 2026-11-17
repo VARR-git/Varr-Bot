@@ -129,6 +129,16 @@ class CommandRegistry {
       throw new AppError('REGISTRY_INVALID_COOLDOWN', `Cooldown command "${name}" tidak valid.`);
     }
 
+    // Command berat (mis. downloader) boleh meminta timeout lebih panjang
+    // daripada COMMAND_TIMEOUT_MS global.
+    const timeoutMs = manifest.timeoutMs === undefined ? null : Number(manifest.timeoutMs);
+    if (timeoutMs !== null && (!Number.isFinite(timeoutMs) || timeoutMs < 1_000 || timeoutMs > 900_000)) {
+      throw new AppError(
+        'REGISTRY_INVALID_TIMEOUT',
+        `Timeout command "${name}" harus antara 1000 dan 900000 ms.`,
+      );
+    }
+
     const command = Object.freeze({
       name,
       aliases: Object.freeze(aliases),
@@ -140,6 +150,7 @@ class CommandRegistry {
       permission,
       scope,
       cooldown,
+      timeoutMs,
       maintenanceSafe: Boolean(manifest.maintenanceSafe),
       hidden: Boolean(manifest.hidden),
       execute: manifest.execute,

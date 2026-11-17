@@ -91,6 +91,10 @@ test('config: pengaturan media, downloader, dan backup', () => {
   const config = loadConfig({
     MEDIA_MAX_MB: '8',
     YTDLP_PATH: '/usr/local/bin/yt-dlp',
+    YTDLP_AUTO_INSTALL: 'true',
+    BIN_DIR: './runtime/bin',
+    FFMPEG_PATH: '/usr/bin/ffmpeg',
+    YTDLP_COOKIES_FILE: './runtime/cookies.txt',
     DOWNLOAD_MAX_MB: '32',
     DOWNLOAD_MAX_DURATION_SEC: '600',
     DOWNLOAD_TIMEOUT_MS: '90000',
@@ -103,6 +107,10 @@ test('config: pengaturan media, downloader, dan backup', () => {
 
   assert.equal(config.mediaMaxMb, 8);
   assert.equal(config.download.binary, '/usr/local/bin/yt-dlp');
+  assert.equal(config.download.autoInstall, true);
+  assert.equal(config.download.ffmpegPath, '/usr/bin/ffmpeg');
+  assert.ok(config.download.binDir.endsWith(path.join('runtime', 'bin')));
+  assert.ok(config.download.cookiesFile.endsWith(path.join('runtime', 'cookies.txt')));
   assert.equal(config.download.maxMb, 32);
   assert.equal(config.download.maxDurationSec, 600);
   assert.equal(config.download.timeoutMs, 90_000);
@@ -111,6 +119,13 @@ test('config: pengaturan media, downloader, dan backup', () => {
   assert.equal(config.backupKeep, 7);
   assert.ok(config.tmpDir.endsWith(path.join('runtime', 'tmp')));
   assert.ok(config.backupsDir.endsWith(path.join('runtime', 'backups')));
+
+  const defaults = loadConfig({});
+  assert.equal(defaults.download.autoInstall, false);
+  assert.equal(defaults.download.ffmpegPath, 'ffmpeg');
+  assert.equal(defaults.download.cookiesFile, '');
+  assert.equal(loadConfig({ YTDLP_AUTO_INSTALL: '1' }).download.autoInstall, true);
+  assert.equal(loadConfig({ YTDLP_AUTO_INSTALL: 'ngawur' }).download.autoInstall, false);
 
   const clamped = loadConfig({
     MEDIA_MAX_MB: '0',

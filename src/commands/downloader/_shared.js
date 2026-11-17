@@ -29,7 +29,9 @@ function describeError(ctx, error, platformLabel) {
     case 'DOWNLOAD_UNSUPPORTED_HOST':
       return ctx.t('downloader.unsupportedHost', { platform: platformLabel });
     case 'DOWNLOAD_TOO_LARGE':
-      return ctx.t('downloader.tooLarge', { max: meta.max ?? Math.round(16) });
+      return ctx.t('downloader.tooLarge', {
+        max: meta.max ?? ctx.config.download?.maxMb ?? 16,
+      });
     case 'DOWNLOAD_TOO_LONG':
       return ctx.t('downloader.tooLong', {
         duration: meta.duration ?? ctx.t('downloader.durationUnknown'),
@@ -38,7 +40,21 @@ function describeError(ctx, error, platformLabel) {
     case 'DOWNLOAD_BUSY':
       return ctx.t('downloader.busy');
     case 'DOWNLOAD_FFMPEG_MISSING':
-      return ctx.t('downloader.ffmpegMissing');
+      return ctx.t('downloader.ffmpegMissing', { prefix: ctx.prefix });
+    case 'DOWNLOAD_NOT_READY':
+      return ctx.t('downloader.unavailable', { prefix: ctx.prefix });
+    case 'DOWNLOAD_BOT_CHECK':
+      return ctx.t('downloader.botCheck');
+    case 'DOWNLOAD_AGE_RESTRICTED':
+      return ctx.t('downloader.ageRestricted');
+    case 'DOWNLOAD_UNAVAILABLE':
+      return ctx.t('downloader.unavailableMedia');
+    case 'DOWNLOAD_FORMAT':
+      return ctx.t('downloader.formatUnavailable');
+    case 'DOWNLOAD_TIMEOUT':
+      return ctx.t('downloader.timeout');
+    case 'DOWNLOAD_UNSUPPORTED_MEDIA':
+      return ctx.t('downloader.unsupportedMedia');
     default:
       return ctx.t('downloader.failed');
   }

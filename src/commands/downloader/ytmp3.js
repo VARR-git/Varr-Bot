@@ -15,6 +15,7 @@ module.exports = {
   permission: 'user',
   scope: 'all',
   cooldown: 20,
+  timeoutMs: 660_000,
 
   async execute(ctx) {
     return executeDownload(ctx, {

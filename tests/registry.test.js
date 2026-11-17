@@ -60,6 +60,17 @@ test('registry: manifest tidak valid ditolak', () => {
   assert.throws(() => registry.register(manifest({ name: 'x', permission: 'root' })), /Permission/);
   assert.throws(() => registry.register(manifest({ name: 'x', scope: 'global' })), /Scope/);
   assert.throws(() => registry.register(manifest({ name: 'x', cooldown: -1 })), /Cooldown/);
+  assert.throws(() => registry.register(manifest({ name: 'x', timeoutMs: 500 })), /Timeout/);
+  assert.throws(() => registry.register(manifest({ name: 'x', timeoutMs: 'abc' })), /Timeout/);
+  assert.throws(() => registry.register(manifest({ name: 'x', timeoutMs: 901_000 })), /Timeout/);
+});
+
+test('registry: timeoutMs per command disimpan', () => {
+  const registry = new CommandRegistry();
+  const command = registry.register(manifest({ name: 'berat', timeoutMs: 660_000 }));
+
+  assert.equal(command.timeoutMs, 660_000);
+  assert.equal(registry.register(manifest({ name: 'biasa' })).timeoutMs, null);
 });
 
 test('registry: kategori dan daftar command', () => {
@@ -109,5 +120,7 @@ test('registry: memuat command bawaan', () => {
   assert.equal(registry.get('kick').permission, 'admin');
   assert.equal(registry.get('kick').scope, 'group');
   assert.equal(registry.get('ytmp3').category, 'downloader');
+  assert.equal(registry.get('ytmp3').timeoutMs, 660_000);
+  assert.equal(registry.get('tiktok').timeoutMs, 660_000);
   assert.equal(registry.get('ping').maintenanceSafe, true);
 });

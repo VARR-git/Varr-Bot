@@ -26,6 +26,23 @@ function stringValue(value, fallback) {
 }
 
 /**
+ * Parse nilai boolean dari environment. Nilai yang tidak dikenal memakai
+ * fallback agar salah ketik tidak diam-diam mengaktifkan fitur berisiko.
+ *
+ * @param {string|undefined} value
+ * @param {boolean} [fallback]
+ * @returns {boolean}
+ */
+function booleanValue(value, fallback = false) {
+  if (typeof value !== 'string' || !value.trim()) return fallback;
+
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'y', 'on', 'aktif'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'n', 'off', 'nonaktif'].includes(normalized)) return false;
+  return fallback;
+}
+
+/**
  * @param {string|undefined} value
  * @param {number} fallback
  * @param {{min?: number, max?: number}} [options]
@@ -138,6 +155,8 @@ function loadConfig(env = process.env) {
     );
   }
 
+  const cookiesFile = stringValue(env.YTDLP_COOKIES_FILE, '');
+
   return {
     botName: stringValue(env.BOT_NAME, 'Varr-Bot'),
     version: pkg.version,
@@ -161,6 +180,10 @@ function loadConfig(env = process.env) {
     mediaMaxMb: numberValue(env.MEDIA_MAX_MB, 16, { min: 1, max: 100 }),
     download: {
       binary: stringValue(env.YTDLP_PATH, 'yt-dlp'),
+      autoInstall: booleanValue(env.YTDLP_AUTO_INSTALL, false),
+      binDir: resolveDir(stringValue(env.BIN_DIR, path.join('data', 'bin'))),
+      ffmpegPath: stringValue(env.FFMPEG_PATH, 'ffmpeg'),
+      cookiesFile: cookiesFile ? resolveDir(cookiesFile) : '',
       maxMb: numberValue(env.DOWNLOAD_MAX_MB, 16, { min: 1, max: 100 }),
       maxDurationSec: numberValue(env.DOWNLOAD_MAX_DURATION_SEC, 900, { min: 30, max: 7_200 }),
       timeoutMs: numberValue(env.DOWNLOAD_TIMEOUT_MS, 120_000, { min: 5_000, max: 600_000 }),
@@ -187,4 +210,5 @@ module.exports = {
   parsePrefixes,
   parseOwnerNumbers,
   digitsOnly,
+  booleanValue,
 };

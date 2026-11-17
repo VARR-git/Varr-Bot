@@ -1,6 +1,6 @@
 # Review Phase 2 — Varr-Bot
 
-Dokumen audit internal untuk Phase 2: apa yang dibangun, kenapa begitu, dan di mana risikonya. Status: **Phase 2 selesai** (`v0.2.0`), **142 test hijau**.
+Dokumen audit internal untuk Phase 2: apa yang dibangun, kenapa begitu, dan di mana risikonya. Status: **Phase 2 selesai** (`v0.2.0`), **156 test hijau**.
 
 ---
 
@@ -188,11 +188,12 @@ argumen → cari URL → validateMediaUrl (platform allowlist)
 - `ytmp3` memakai `-x --audio-format mp3` sehingga butuh FFmpeg.
 - `ytmp4`/`tiktok` memakai `bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b`.
 - Availability yt-dlp di-cache; jika tidak ada, command langsung menjawab tanpa memanggil proses.
-- Error dipetakan ke pesan pengguna: URL invalid, host tidak didukung, terlalu besar, terlalu panjang, sibuk, FFmpeg hilang, gagal umum.
+- Error dipetakan ke pesan pengguna: URL invalid, host tidak didukung, terlalu besar, terlalu panjang, sibuk, FFmpeg hilang, verifikasi bot, batas usia, media tidak tersedia, format tidak tersedia, timeout, media tidak didukung, gagal umum.
+- Binary yt-dlp dicari di `BIN_DIR` lebih dulu, lalu `PATH`. Auto-install hanya aktif bila `YTDLP_AUTO_INSTALL=true` dan memakai rilis resmi GitHub + verifikasi checksum SHA-256.
 
 ---
 
-## 9. Peta Test (142)
+## 9. Peta Test (156)
 
 | File | Jumlah | Fokus |
 |---|---|---|
@@ -210,11 +211,11 @@ argumen → cari URL → validateMediaUrl (platform allowlist)
 | `tests/groupCommands.test.js` | 14 | kick/promote/demote/warn/warnings/mute/tagall/groupinfo/welcome/goodbye |
 | `tests/guard.test.js` | 11 | Pola link, admin exemption, bot bukan admin, warn→kick, flood, toggle |
 | `tests/media.test.js` | 12 | findMedia, sharp, sticker/toimg, batas ukuran, error |
-| `tests/downloader.test.js` | 15 | Validasi URL, SSRF, limit, cleanup, limiter, command |
+| `tests/downloader.test.js` | 27 | Validasi URL, SSRF, limit, cleanup, limiter, auto-install, klasifikasi error, command |
 | `tests/backup.test.js` | 8 | Verifikasi, korup, restore, skema, retensi, command |
 | `tests/ban.test.js` | 8 | Ban user/grup, throttle notifikasi, proteksi, middleware, stats |
 
-Yang **tidak** diuji otomatis: koneksi Baileys asli, QR/pairing, `docker build`, unduhan jaringan nyata, konversi sharp nyata (dipakai fake pipeline).
+Yang **tidak** diuji otomatis: koneksi Baileys asli, QR/pairing, `docker build`, konversi sharp nyata (dipakai fake pipeline). Unduhan jaringan nyata sudah diverifikasi manual sekali (YouTube MP3/MP4 + TikTok, auto-install rilis resmi), tetapi tidak dijalankan di CI agar test tetap cepat dan tidak bergantung jaringan.
 
 ---
 
@@ -230,6 +231,8 @@ Yang **tidak** diuji otomatis: koneksi Baileys asli, QR/pairing, `docker build`,
 8. **Guard memakai metadata cache.** Perubahan admin bisa terlambat dikenali maksimal 60 detik.
 9. **Tidak ada cap global unduhan per pengguna.** Cooldown 20 detik per command adalah rem utamanya.
 10. **Nama file downloader kehilangan karakter non-ASCII** (emoji/aksen) karena disanitasi.
+11. **Batas SSRF hanya di URL awal.** `validateMediaUrl` memastikan URL dari chat hanya menuju host platform yang diizinkan, tetapi yt-dlp sendiri dapat mengikuti redirect/URL internal yang ditentukan oleh platform (mis. CDN, `googlevideo.com`, atau redirect TikTok). URL awal tidak bisa dipakai untuk memaksa request ke alamat internal, namun ekstraktor tetap punya permukaan jaringan sendiri. Mitigasi berlapis: proses tanpa shell, `--ignore-config`, batas ukuran/durasi/timeout, direktori temporary terisolasi, dan cleanup. Bila butuh jaminan lebih ketat, jalankan downloader di container/jaringan terpisah dengan egress allowlist.
+12. **Timeout proses Windows memakai `taskkill /T /F`.** Proses anak (ffmpeg) ikut dimatikan, tetapi ada jeda singkat sebelum cleanup; file temporary yang masih terkunci akan dipangkas pada `pruneTmp` berikutnya (entri lebih dari 6 jam).
 
 ---
 
