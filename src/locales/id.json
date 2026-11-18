@@ -125,6 +125,18 @@
     "toimg": {
       "description": "Ubah sticker menjadi gambar PNG"
     },
+    "tomp3": {
+      "description": "Ubah video/audio menjadi file MP3"
+    },
+    "topdf": {
+      "description": "Ubah gambar atau teks menjadi file PDF"
+    },
+    "qr": {
+      "description": "Ubah teks atau URL menjadi QR Code"
+    },
+    "readqr": {
+      "description": "Baca isi QR Code dari gambar"
+    },
     "doctor": {
       "description": "Cek kesehatan bot, session, dan dependensi"
     },
@@ -357,7 +369,26 @@
     "convertFailed": "Gagal mengonversi media.",
     "toimgUsage": "Reply sticker dengan *{prefix}toimg*.",
     "toimgOnlySticker": "Command ini hanya untuk sticker.",
-    "toimgCaption": "🖼️ Hasil konversi sticker."
+    "toimgCaption": "🖼️ Hasil konversi sticker.",
+    "tomp3Usage": "Kirim video/audio dengan caption *{prefix}tomp3* atau reply media tersebut dengan *{prefix}tomp3*.",
+    "tomp3Failed": "Gagal mengonversi media menjadi MP3.",
+    "durationTooLong": "Durasi media melebihi batas {max} detik.",
+    "ffmpegMissing": "FFmpeg belum terpasang, jadi media tidak bisa dikonversi. Owner bisa cek *{prefix}doctor*.",
+    "topdfUsage": "Kirim/reply gambar dengan *{prefix}topdf*, atau tulis *{prefix}topdf <teks>*.",
+    "topdfFailed": "Gagal membuat file PDF.",
+    "topdfCaption": "📄 File PDF berhasil dibuat.",
+    "pdfUnavailable": "Fitur PDF tidak tersedia karena *pdf-lib* belum terpasang.",
+    "pdfTooLong": "Teks terlalu panjang untuk dijadikan PDF (maksimal 20000 karakter).",
+    "qrUsage": "Gunakan *{prefix}qr <teks/url>*.\nContoh: *{prefix}qr https://example.com*",
+    "qrFailed": "Gagal membuat QR Code.",
+    "qrCaption": "🔳 QR Code berhasil dibuat.",
+    "qrUnavailable": "Fitur QR Code tidak tersedia karena *qrcode* belum terpasang.",
+    "qrTooLong": "Teks QR terlalu panjang (maksimal 2000 karakter).",
+    "readqrUsage": "Kirim gambar QR dengan caption *{prefix}readqr* atau reply gambar tersebut dengan *{prefix}readqr*.",
+    "readqrFailed": "Gagal membaca QR Code dari gambar.",
+    "readqrNotFound": "QR Code tidak ditemukan atau tidak bisa dibaca dari gambar ini.",
+    "readqrUnavailable": "Fitur baca QR tidak tersedia karena *jsqr* atau *sharp* belum terpasang.",
+    "readqrResult": "🔎 *Isi QR Code*\n{result}"
   },
   "downloader": {
     "unavailable": "Downloader belum siap: *yt-dlp* tidak ditemukan. Owner bisa memasang yt-dlp lalu cek *{prefix}doctor*.",

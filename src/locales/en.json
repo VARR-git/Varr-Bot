@@ -166,6 +166,18 @@
     },
     "chatbot": {
       "description": "Enable/disable the auto-reply AI in this chat"
+    },
+    "tomp3": {
+      "description": "Convert video/audio into an MP3 file"
+    },
+    "topdf": {
+      "description": "Convert an image or text into a PDF file"
+    },
+    "qr": {
+      "description": "Turn text or a URL into a QR Code"
+    },
+    "readqr": {
+      "description": "Read the contents of a QR Code image"
     }
   },
   "ai": {
@@ -357,7 +369,26 @@
     "convertFailed": "Failed to convert the media.",
     "toimgUsage": "Reply to a sticker with *{prefix}toimg*.",
     "toimgOnlySticker": "This command only works on stickers.",
-    "toimgCaption": "🖼️ Converted sticker."
+    "toimgCaption": "🖼️ Converted sticker.",
+    "tomp3Usage": "Send video/audio with caption *{prefix}tomp3* or reply to that media with *{prefix}tomp3*.",
+    "tomp3Failed": "Failed to convert the media into MP3.",
+    "durationTooLong": "Media duration exceeds the {max} second limit.",
+    "ffmpegMissing": "FFmpeg is not installed, so media cannot be converted. The owner can check *{prefix}doctor*.",
+    "topdfUsage": "Send/reply an image with *{prefix}topdf*, or type *{prefix}topdf <text>*.",
+    "topdfFailed": "Failed to create the PDF file.",
+    "topdfCaption": "📄 PDF file created successfully.",
+    "pdfUnavailable": "PDF feature is unavailable because *pdf-lib* is not installed.",
+    "pdfTooLong": "Text is too long for a PDF (maximum 20000 characters).",
+    "qrUsage": "Use *{prefix}qr <text/url>*.\nExample: *{prefix}qr https://example.com*",
+    "qrFailed": "Failed to create the QR Code.",
+    "qrCaption": "🔳 QR Code created successfully.",
+    "qrUnavailable": "QR Code feature is unavailable because *qrcode* is not installed.",
+    "qrTooLong": "QR text is too long (maximum 2000 characters).",
+    "readqrUsage": "Send a QR image with caption *{prefix}readqr* or reply to that image with *{prefix}readqr*.",
+    "readqrFailed": "Failed to read the QR Code from the image.",
+    "readqrNotFound": "No readable QR Code was found in this image.",
+    "readqrUnavailable": "QR reader is unavailable because *jsqr* or *sharp* is not installed.",
+    "readqrResult": "🔎 *QR Code contents*\n{result}"
   },
   "downloader": {
     "unavailable": "The downloader is not ready: *yt-dlp* was not found. The owner can install yt-dlp and check *{prefix}doctor*.",

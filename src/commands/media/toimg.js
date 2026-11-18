@@ -21,11 +21,13 @@ module.exports = {
     const found = media.findMedia(ctx.msg);
     if (!found) return ctx.t('media.toimgUsage', { prefix: ctx.prefix });
     if (found.kind !== 'sticker') return ctx.t('media.toimgOnlySticker');
-
+    
     const maxMb = Math.round(media.maxBytes / (1024 * 1024));
     if (found.size && found.size > media.maxBytes) {
       return ctx.t('media.tooLarge', { max: maxMb });
     }
+
+    await ctx.react('⏳');
 
     let buffer;
     try {
@@ -52,7 +54,8 @@ module.exports = {
       );
       return ctx.t('media.convertFailed');
     }
-
+    
+    await ctx.react('✅');
     await ctx.send({ image, caption: ctx.t('media.toimgCaption') }, { quoted: false });
     return null;
   },

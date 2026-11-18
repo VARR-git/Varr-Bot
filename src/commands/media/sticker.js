@@ -27,6 +27,8 @@ module.exports = {
     if (found.size && found.size > media.maxBytes) {
       return ctx.t('media.tooLarge', { max: maxMb });
     }
+    
+    await ctx.react('⏳');
 
     let buffer;
     try {
