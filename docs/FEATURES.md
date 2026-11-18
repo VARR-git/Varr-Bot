@@ -6,11 +6,11 @@ Dokumen ini adalah **blueprint fitur**. Prioritas ditentukan agar pengembangan t
 
 | Fase | Status | Isi |
 |---|---|---|
-| Phase 1 | ✅ selesai | Fondasi: config, logger, registry, middleware, SQLite, QR/pairing, command dasar |
-| Phase 2 | ✅ selesai | Grup, guard, media dasar, downloader (yt/tiktok), backup/restore, ban, stats, doctor |
-| Phase 3 | ⏳ berikutnya | AI multi-provider, memory, media lanjutan, downloader tambahan |
-| Phase 4 | ⏳ rencana | Economy, games, automation, guard tambahan |
-| Phase 5 | ⏳ rencana | Jadibot, REST API, dashboard, plugin store |
+| Phase 1 | ✅ | Fondasi: config, logger, registry, middleware, SQLite, QR/pairing, command dasar |
+| Phase 2 | ✅ | Grup, guard, media dasar, downloader (yt/tiktok), backup/restore, ban, stats, doctor |
+| Phase 3 | ⏳ | AI multi-provider, memory, media lanjutan, downloader tambahan |
+| Phase 4 | ⏳ | Economy, games, automation, guard tambahan |
+| Phase 5 | ⏳ | Jadibot, REST API, dashboard, plugin store |
 
 Yang **sudah** tersedia: `.menu`, `.help`, `.ping`, `.alive`, `.owner`, `.mode`, `.maintenance`, `.welcome`, `.goodbye`, `.promote`, `.demote`, `.kick`, `.mute`, `.unmute`, `.tagall`, `.hidetag`, `.groupinfo`, `.warn`, `.warnings`, `.unwarn`, `.antilink`, `.antispam`, `.setwarnlimit`, `.guardstatus`, `.sticker`, `.toimg`, `.ytmp3`, `.ytmp4`, `.tiktok`, `.ban`, `.unban`, `.stats`, `.backup`, `.restore`, `.doctor`.
 
