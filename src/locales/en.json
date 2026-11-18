@@ -151,7 +151,47 @@
     },
     "restore": {
       "description": "Restore the database from a backup file"
+    },
+    "ai": {
+      "description": "Ask the AI with conversation context"
+    },
+    "resetai": {
+      "description": "Clear the AI conversation history in this chat"
+    },
+    "summary": {
+      "description": "Summarize long text"
+    },
+    "translate": {
+      "description": "Translate text to a target language"
+    },
+    "chatbot": {
+      "description": "Enable/disable the auto-reply AI in this chat"
     }
+  },
+  "ai": {
+    "unavailable": "AI is not configured yet. The owner needs to set up the API key first.",
+    "disabled": "The AI feature is currently disabled.",
+    "quotaExceeded": "Your daily AI quota has been used up. Try again tomorrow.",
+    "failed": "The AI cannot answer right now. Please try again later.",
+    "usage": "Use *{prefix}{command} <question>* or reply to a message with *{prefix}{command}*."
+  },
+  "resetai": {
+    "done": "🧠 The AI conversation history in this chat has been cleared.",
+    "empty": "There is no AI history stored in this chat."
+  },
+  "summary": {
+    "usage": "Use *{prefix}summary <text>*, or reply to the message/text document you want summarized.",
+    "failed": "Failed to summarize the text. Please try again later."
+  },
+  "translate": {
+    "usage": "Use *{prefix}{command} <language> <text>*, or reply to a message with *{prefix}{command} <language>*.",
+    "failed": "Failed to translate the text. Please try again later."
+  },
+  "chatbot": {
+    "usage": "Use *{prefix}{command} on*, *{prefix}{command} off*, or *{prefix}{command} status*.",
+    "status": "🤖 Chatbot status in this chat: *{status}*.",
+    "enabled": "✅ Chatbot *enabled*. The bot will auto-reply in this chat.",
+    "disabled": "🔕 Chatbot *disabled*."
   },
   "menu": {
     "greeting": "Hello, {name}! 👋",

@@ -22,6 +22,8 @@ const { createGuardService } = require('./services/guard');
 const { createGroupEvents } = require('./services/groupEvents');
 const { createMediaService } = require('./services/media');
 const { createDownloaderService } = require('./services/downloader');
+const { AiService } = require('./services/ai');
+const { createAiMemory } = require('./services/aiMemory');
 const { buildHealthReport } = require('./core/health');
 
 const BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1_000;
@@ -75,6 +77,8 @@ async function main() {
   const downloader = createDownloaderService({ config, logger });
   const guard = createGuardService({ config, db, logger, getGroupMetadata });
   const groupEvents = createGroupEvents({ config, db, logger, getGroupMetadata });
+  const ai = new AiService(config.ai, { logger });
+  const aiMemory = createAiMemory({ logger });
 
   const middlewares = createDefaultMiddlewares({
     config,
@@ -91,7 +95,7 @@ async function main() {
     db,
     state,
     middlewares,
-    services: { getGroupMetadata, messageCache, guard, media, downloader },
+    services: { getGroupMetadata, messageCache, guard, media, downloader, ai, aiMemory },
   });
 
   const connection = createConnection({

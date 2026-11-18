@@ -151,7 +151,47 @@
     },
     "restore": {
       "description": "Pulihkan database dari file backup"
+    },
+    "ai": {
+      "description": "Tanya AI dengan konteks percakapan"
+    },
+    "resetai": {
+      "description": "Hapus riwayat percakapan AI di chat ini"
+    },
+    "summary": {
+      "description": "Ringkas teks panjang"
+    },
+    "translate": {
+      "description": "Terjemahkan teks ke bahasa tujuan"
+    },
+    "chatbot": {
+      "description": "Aktifkan/nonaktifkan balasan otomatis AI di chat ini"
     }
+  },
+  "ai": {
+    "unavailable": "AI belum dikonfigurasi. Owner perlu mengisi API key terlebih dahulu.",
+    "disabled": "Fitur AI sedang dinonaktifkan.",
+    "quotaExceeded": "Kuota AI harian kamu sudah habis. Coba lagi besok.",
+    "failed": "AI tidak bisa menjawab sekarang. Coba lagi nanti.",
+    "usage": "Gunakan *{prefix}{command} <pertanyaan>* atau reply pesan dengan *{prefix}{command}*."
+  },
+  "resetai": {
+    "done": "🧠 Riwayat percakapan AI di chat ini sudah dihapus.",
+    "empty": "Tidak ada riwayat AI yang tersimpan di chat ini."
+  },
+  "summary": {
+    "usage": "Gunakan *{prefix}summary <teks>*, atau reply pesan/dokumen teks yang ingin diringkas.",
+    "failed": "Gagal meringkas teks. Coba lagi nanti."
+  },
+  "translate": {
+    "usage": "Gunakan *{prefix}{command} <bahasa> <teks>*, atau reply pesan dengan *{prefix}{command} <bahasa>*.",
+    "failed": "Gagal menerjemahkan teks. Coba lagi nanti."
+  },
+  "chatbot": {
+    "usage": "Gunakan *{prefix}{command} on*, *{prefix}{command} off*, atau *{prefix}{command} status*.",
+    "status": "🤖 Status chatbot di chat ini: *{status}*.",
+    "enabled": "✅ Chatbot *diaktifkan*. Bot akan membalas otomatis di chat ini.",
+    "disabled": "🔕 Chatbot *dinonaktifkan*."
   },
   "menu": {
     "greeting": "Halo, {name}! 👋",

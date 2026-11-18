@@ -108,6 +108,73 @@ function resolveDir(value) {
 }
 
 /**
+ * Parse target AI `provider:model`. Model boleh mengandung `:` dan `/`,
+ * jadi hanya `:` pertama yang dianggap pemisah. Tanpa `:` berarti memakai
+ * provider default.
+ *
+ * @param {string|undefined} value
+ * @param {string} fallbackProvider
+ * @returns {{provider: string, model: string}|null}
+ */
+function parseAiTarget(value, fallbackProvider) {
+  const text = stringValue(value, '');
+  if (!text) return null;
+
+  const sep = text.indexOf(':');
+  const provider = (sep === -1 ? fallbackProvider : text.slice(0, sep)).trim().toLowerCase();
+  const model = (sep === -1 ? text : text.slice(sep + 1)).trim();
+
+  if (!provider || !model) return null;
+  return { provider, model };
+}
+
+/**
+ * Parse daftar fallback `provider:model` yang dipisahkan koma.
+ *
+ * @param {string|undefined} value
+ * @param {string} fallbackProvider
+ * @returns {Array<{provider: string, model: string}>}
+ */
+function parseAiFallbacks(value, fallbackProvider) {
+  return String(value || '')
+    .split(',')
+    .map((item) => parseAiTarget(item, fallbackProvider))
+    .filter(Boolean);
+}
+
+/**
+ * Parse daftar API key yang dipisahkan koma (key pool). Spasi, `;`, dan
+ * baris baru juga diperbolehkan sebagai pemisah. Hasil unik dan ter-trim.
+ *
+ * @param {string|undefined} value
+ * @returns {string[]}
+ */
+function parseKeyPool(value) {
+  return [...new Set(
+    String(value || '')
+      .split(/[,;\n]+/)
+      .map((item) => item.trim())
+      .filter(Boolean),
+  )];
+}
+
+/**
+ * Gabungkan key pool (`*_API_KEYS`) dengan key tunggal lama (`*_API_KEY`)
+ * untuk kompatibilitas mundur. Key pool menang bila diisi.
+ *
+ * @param {string|undefined} poolValue
+ * @param {string|undefined} singleValue
+ * @returns {string[]}
+ */
+function buildKeyPool(poolValue, singleValue) {
+  const pool = parseKeyPool(poolValue);
+  if (pool.length > 0) return pool;
+
+  const single = stringValue(singleValue, '');
+  return single ? [single] : [];
+}
+
+/**
  * @param {NodeJS.ProcessEnv} [env]
  */
 function loadConfig(env = process.env) {
@@ -156,6 +223,13 @@ function loadConfig(env = process.env) {
   }
 
   const cookiesFile = stringValue(env.YTDLP_COOKIES_FILE, '');
+  const aiPrimaryProvider = stringValue(env.AI_PRIMARY_PROVIDER, 'gemini').toLowerCase();
+
+  const geminiKeys = buildKeyPool(env.GEMINI_API_KEYS, env.GEMINI_API_KEY);
+  const groqKeys = buildKeyPool(env.GROQ_API_KEYS, env.GROQ_API_KEY);
+  const openRouterKeys = buildKeyPool(env.OPENROUTER_API_KEYS, env.OPENROUTER_API_KEY);
+  const aiDefaultModel = stringValue(env.AI_DEFAULT_MODEL, '');
+  const aiDailyQuotaPerUser = numberValue(env.AI_DAILY_QUOTA_PER_USER, 0, { min: 0, max: 100_000 });
 
   return {
     botName: stringValue(env.BOT_NAME, 'Varr-Bot'),
@@ -197,6 +271,27 @@ function loadConfig(env = process.env) {
       max: numberValue(env.RATE_LIMIT_MAX, 20, { min: 1, max: 1_000 }),
       windowMs: numberValue(env.RATE_LIMIT_WINDOW_MS, 60_000, { min: 1_000, max: 3_600_000 }),
     },
+    ai: {
+      enabled: booleanValue(env.AI_ENABLED, true),
+      geminiKeys,
+      groqKeys,
+      openRouterKeys,
+      geminiKey: geminiKeys[0] || '',
+      groqKey: groqKeys[0] || '',
+      openRouterKey: openRouterKeys[0] || '',
+      primaryProvider: aiPrimaryProvider,
+      primaryModel: stringValue(env.AI_PRIMARY_MODEL, 'gemini-2.5-pro'),
+      defaultModel: aiDefaultModel || stringValue(env.AI_PRIMARY_MODEL, 'gemini-2.5-pro'),
+      miniModel: stringValue(env.AI_MINI_MODEL, ''),
+      fallbacks: parseAiFallbacks(env.AI_FALLBACKS, aiPrimaryProvider),
+      systemPrompt: stringValue(env.AI_SYSTEM_PROMPT, ''),
+      maxTokens: numberValue(env.AI_MAX_TOKENS, 1024, { min: 64, max: 8_192 }),
+      timeoutMs: numberValue(env.AI_TIMEOUT_MS, 60_000, { min: 5_000, max: 300_000 }),
+      maxHistory: numberValue(env.AI_MAX_HISTORY, 8, { min: 0, max: 50 }),
+      promptMax: numberValue(env.AI_PROMPT_MAX, 2_000, { min: 100, max: 20_000 }),
+      dailyLimit: numberValue(env.AI_DAILY_LIMIT, 0, { min: 0, max: 10_000 }),
+      dailyQuotaPerUser: aiDailyQuotaPerUser || numberValue(env.AI_DAILY_LIMIT, 0, { min: 0, max: 100_000 }),
+    },
   };
 }
 
@@ -211,4 +306,8 @@ module.exports = {
   parseOwnerNumbers,
   digitsOnly,
   booleanValue,
+  parseAiTarget,
+  parseAiFallbacks,
+  parseKeyPool,
+  buildKeyPool,
 };

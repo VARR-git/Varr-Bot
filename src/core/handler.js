@@ -17,12 +17,15 @@ const {
   jidToNumber,
   maskJid,
   normalizeJid,
+  sameJid,
 } = require('../utils/jid');
 const {
   extractText,
   parseCommand,
   unwrapMessage,
 } = require('../utils/text');
+const { getContextInfo } = require('../utils/group');
+const { isChatbotEnabled } = require('../utils/chatbot');
 
 const SKIP_SUFFIXES = ['@broadcast', '@newsletter'];
 const SEEN_LIMIT = 1_000;
@@ -221,6 +224,99 @@ function createMessageHandler({
   }
 
   /**
+   * Cek apakah pesan grup menyasar bot: mention `@bot` atau reply ke pesan bot.
+   *
+   * @param {object} sock
+   * @param {object} content
+   * @returns {boolean}
+   */
+  function isBotAddressed(sock, content) {
+    const botIds = [sock?.user?.id, sock?.user?.lid].filter(Boolean);
+    if (botIds.length === 0) return false;
+
+    const context = getContextInfo(content);
+    if (!context) return false;
+
+    if (Array.isArray(context.mentionedJid)) {
+      for (const jid of context.mentionedJid) {
+        if (botIds.some((id) => sameJid(id, jid))) return true;
+      }
+    }
+
+    if (context.participant && botIds.some((id) => sameJid(id, context.participant))) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Balasan otomatis chatbot untuk pesan yang bukan command.
+   *
+   * @param {object} sock
+   * @param {object} msg
+   * @param {string} chatId
+   * @param {object} content
+   * @param {string} text
+   */
+  async function maybeChatbot(sock, msg, chatId, content, text) {
+    const ai = services.ai;
+    if (!ai || !ai.config?.enabled) return;
+    const memory = services.aiMemory;
+
+    const isGroup = isGroupJid(chatId);
+    if (!isChatbotEnabled(db, chatId, isGroup)) return;
+
+    const senderIds = collectSenderIds(msg, chatId);
+    const senderId = senderIds[0] || chatId;
+    const senderNumbers = new Set(
+      senderIds.filter(isPhoneJid).map(jidToNumber).filter(Boolean),
+    );
+    const isOwner = config.ownerNumbers.some((number) => senderNumbers.has(number));
+
+    // Lewati pengecekan banned/maintenance seperti command.
+    if (state.maintenance && !isOwner) return;
+
+    try {
+      if (!isOwner) {
+        if (isGroup && db.isGroupBanned(chatId)) return;
+        if (db.isUserBanned(senderId)) return;
+      }
+    } catch (error) {
+      logger?.warn?.({ err: error }, 'Gagal memeriksa status ban untuk chatbot');
+    }
+
+    // Di grup hanya membalas saat di-mention atau reply ke pesan bot.
+    if (isGroup && !isBotAddressed(sock, content)) return;
+
+    const scope = isGroup ? chatId : senderId;
+    const history = memory ? memory.get(scope) : [];
+    const messages = [...history, { role: 'user', content: text }];
+
+    try {
+      const result = await ai.generate({ messages }, scope);
+
+      if (memory) {
+        memory.append(scope, 'user', text);
+        memory.append(scope, 'assistant', result.text);
+      }
+
+      await sock.sendMessage(chatId, { text: result.text }, { quoted: msg });
+
+      try {
+        db.incrementStat('chatbot:reply');
+      } catch {
+        // Statistik tidak boleh mengubah hasil chatbot.
+      }
+    } catch (error) {
+      logger.warn?.(
+        { code: error?.code || 'CHATBOT_FAILED', chat: maskJid(chatId) },
+        'Chatbot gagal menjawab',
+      );
+    }
+  }
+
+  /**
    * @param {object} ctx
    * @param {Error} error
    */
@@ -353,12 +449,20 @@ function createMessageHandler({
     }
 
     const parsed = parseCommand(text, config.prefixes);
-    if (!parsed) return;
 
-    // Serialisasi per chat: pesan dari chat yang sama berurutan, chat lain paralel.
+    if (parsed) {
+      // Serialisasi per chat: pesan dari chat yang sama berurutan, chat lain paralel.
+      await chatQueue.run(
+        normalizeJid(chatId),
+        () => processCommand(sock, msg, parsed, text),
+      );
+      return;
+    }
+
+    // Pesan biasa (bukan command) → trigger chatbot bila aktif di chat ini.
     await chatQueue.run(
       normalizeJid(chatId),
-      () => processCommand(sock, msg, parsed, text),
+      () => maybeChatbot(sock, msg, chatId, content, text),
     );
   }
 
