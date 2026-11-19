@@ -2,7 +2,7 @@
 
 Bot WhatsApp modular berbasis [Baileys](https://github.com/WhiskeySockets/Baileys) untuk kebutuhan grup, produktivitas, media, AI, dan otomasi. Varr-Bot dirancang agar mudah dirawat, aman dipakai, dan gampang ditambah fitur baru lewat sistem plugin.
 
-> **Status:** **Phase 2 — grup, guard, media & downloader selesai** (`v0.2.0`). Fondasi Phase 1 tetap dipakai; Phase 2 menambah 28 command (total 35) untuk grup, guard, media, downloader, backup & restore terverifikasi, ban/unban, `.stats`, serta migrasi database v2. 164 test hijau.
+> **Status:** Fondasi Phase 1–2 selesai. Source saat ini juga sudah memuat AI multi-provider, media suite, downloader multi-platform, dan economy (55 command).
 
 ## Kenapa Varr-Bot?
 
@@ -25,19 +25,20 @@ Varr-Bot mengambil **ide dan pola terbaik** dari bot-bot populer, lalu dibangun 
 
 ## Fitur
 
-Ringkasan kategori (detail lengkap ada di [docs/FEATURES.md](docs/FEATURES.md)). ✅ = sudah ada di `v0.2.0`, ⏳ = fase berikutnya.
+Ringkasan kategori (detail lengkap ada di [docs/FEATURES.md](docs/FEATURES.md)). ✅ = sudah ada di source saat ini, ⏳ = fase berikutnya.
 
 | Kategori | Contoh fitur | Status |
 |---|---|---|
 | Core & UX | Menu per kategori, help, ping, multi-bahasa, prefix fleksibel | ✅ |
 | Manajemen grup | Welcome/goodbye, promote/demote, kick, mute, tagall, hidetag, group info, warning | ✅ |
 | Varr Guard | Anti-link, anti-spam, batas warning, eskalasi warning → kick, guard status | ✅ |
-| Sticker & media | Sticker maker, sticker → gambar | ✅ |
-| Downloader | YouTube MP3/MP4, TikTok tanpa watermark | ✅ |
+| Sticker & media | Sticker maker, sticker → gambar, MP3, PDF, QR, baca QR | ✅ |
+| Downloader | YouTube MP3/MP4, TikTok, Instagram, Facebook, X, Threads, Pinterest, Spotify, SoundCloud | ✅ |
 | Owner & system | Ban/unban, mode, maintenance, stats, backup & restore, Varr Doctor | ✅ |
-| AI | Multi-provider free-first (Gemini, Groq, OpenRouter), chatbot, vision | ⏳ Phase 3 |
-| Utility | Cuaca, berita, Wikipedia, lyrics, kalkulator, QR | ⏳ Phase 3 |
-| Economy & games | Daily reward, bank, level, rank, RPG, mini games | ⏳ Phase 4 |
+| AI | Multi-provider free-first (Gemini, Groq, OpenRouter), chatbot, ringkasan, translate | ✅ |
+| Economy | Daily reward, balance, level, leaderboard | ✅ |
+| AI vision & games | Vision, RPG, mini games | ⏳ Phase 4 |
+| Utility lain | Cuaca, berita, Wikipedia, lyrics, kalkulator | ⏳ Phase 4 |
 | Automation | Reminder, scheduler, broadcast, auto-reply | ⏳ Phase 4 |
 | Scale (lanjutan) | Jadibot multi-session, REST API, web dashboard | ⏳ Phase 5 |
 
@@ -194,14 +195,16 @@ Untuk Pterodactyl, baca [docs/DECISIONS.md](docs/DECISIONS.md).
 │   │   ├── general/          # menu, help, ping, alive, owner
 │   │   ├── group/            # welcome, goodbye, promote, demote, kick, mute, tagall, warn, ...
 │   │   ├── guard/            # antilink, antispam, setwarnlimit, guardstatus
-│   │   ├── media/            # sticker, toimg
-│   │   ├── downloader/       # ytmp3, ytmp4, tiktok (+ _shared.js)
+│   │   ├── media/            # sticker, toimg, tomp3, topdf, qr, readqr
+│   │   ├── downloader/       # ytmp3, ytmp4, tiktok, ig, fb, x, threads, pinterest, spotify, soundcloud (+ _shared.js)
+│   │   ├── ai/               # ai, chatbot, resetai, summary, translate (+ _shared.js)
+│   │   ├── economy/          # balance, daily, level, leaderboard (+ _shared.js)
 │   │   ├── owner/            # mode, maintenance, ban, unban, stats, backup, restore
 │   │   └── tools/            # doctor
-│   ├── services/             # guard, groupEvents, media, downloader, warnings
+│   ├── services/             # guard, groupEvents, media, downloader, warnings, ai, aiMemory
 │   ├── locales/              # id.json, en.json
-│   └── utils/                # text, jid, group, groupTarget, groupModeration, backups, ...
-├── tests/                    # node:test (164 test)
+│   └── utils/                # text, jid, group, groupTarget, groupModeration, economy, chatbot, backups, ...
+├── tests/                    # node:test
 ├── docs/
 ├── data/                     # runtime DB, backup, tmp (tidak di-commit)
 ├── auth_info_baileys/        # session WhatsApp (tidak di-commit)
@@ -210,6 +213,434 @@ Untuk Pterodactyl, baca [docs/DECISIONS.md](docs/DECISIONS.md).
 └── package.json
 ```
 
+
+## Arsitektur & Alur
+
+Bagian ini adalah peta cara kerja Varr-Bot dari proses start sampai pesan dibalas. Diagram mengikuti kode di `src/`; registry saat ini memuat 55 command.
+
+Urutan baca yang disarankan: **siklus hidup (2) → pesan masuk (3) → pipeline middleware (4)**, lalu guard/event grup (5), alur layanan (6), dan data (7).
+
+### 1. Peta komponen
+
+```mermaid
+flowchart LR
+  WA["WhatsApp"]
+  SOCK["Baileys socket"]
+  CONN["core/connection.js"]
+  CACHE["core/messageCache.js"]
+  HANDLER["core/handler.js"]
+  EVENTS["services/groupEvents.js"]
+  QUEUE["core/queue.js"]
+  PIPE["core/middleware/*"]
+  REG["core/registry.js"]
+  CMD["src/commands/*"]
+  SERVICES["services/* + utils/*"]
+  DB[("SQLite<br/>data/varr.db")]
+  FS[("data/tmp<br/>data/backups<br/>auth_info_baileys")]
+  EXT["yt-dlp<br/>FFmpeg / ffprobe<br/>sharp<br/>API AI"]
+
+  WA <--> SOCK
+  SOCK <--> CONN
+  CONN -->|"messages.upsert"| HANDLER
+  CONN -->|"group-participants.update"| EVENTS
+  CONN <-->|"getMessage (retry)"| CACHE
+  HANDLER --> QUEUE
+  QUEUE --> PIPE
+  PIPE --> REG
+  REG --> CMD
+  CMD --> SERVICES
+  HANDLER -->|"chatbot / pesan biasa"| SERVICES
+  SERVICES --> DB
+  EVENTS --> DB
+  SERVICES --> FS
+  SERVICES --> EXT
+```
+
+| Lapisan | Modul | Tanggung jawab |
+|---|---|---|
+| Bootstrap | `index.js`, `src/index.js` | Merakit dependency, menjalankan koneksi, shutdown. |
+| Konfigurasi | `src/config/index.js` | Membaca `.env`, validasi nilai, mengubah path relatif menjadi absolut. |
+| Koneksi | `core/connection.js`, `core/messageCache.js` | Baileys, QR/pairing, reconnect, cache pesan untuk retry. |
+| Masuk | `core/handler.js` | Filter pesan, deduplikasi, guard, parsing, queue, chatbot. |
+| Eksekusi | `core/queue.js`, `core/middleware/*`, `core/registry.js` | Serialisasi per chat, pipeline izin, manifest command. |
+| Fitur | `src/commands/*` | Command tipis: validasi argumen, panggil service, balas. |
+| Domain | `src/services/*`, `src/utils/*` | Guard, warning, media, downloader, AI, ekonomi, format. |
+| Data | `core/database/*` | SQLite, migrasi, setting, statistik, audit, backup/restore. |
+| Observability | `core/logger.js`, `core/health.js`, `.doctor` | Log terstruktur, health report, diagnosa dependency. |
+
+### 2. Siklus hidup proses
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant OP as Operator
+  participant IDX as src/index.js
+  participant CFG as config
+  participant DB as SQLite
+  participant REG as Registry
+  participant CONN as connection
+  participant WA as WhatsApp
+
+  OP->>IDX: npm start
+  IDX->>CFG: loadConfig()
+  alt Konfigurasi tidak valid
+    CFG-->>IDX: AppError
+    IDX-->>OP: exit(1)
+  end
+  IDX->>IDX: buat logger + direktori data/auth/tmp
+  IDX->>DB: createDatabase() + migrasi skema
+  IDX->>DB: baca setting mode & maintenance
+  IDX->>REG: loadCommands() rekursif dari src/commands
+  IDX->>IDX: buat services, middleware, handler
+  IDX->>CONN: createConnection(...)
+  CONN->>CONN: useMultiFileAuthState(authDir)
+  CONN->>WA: makeWASocket()
+  alt Belum punya sesi
+    WA-->>CONN: QR atau pairing code
+    CONN-->>OP: tampilkan QR / kode 8 digit
+  end
+  WA-->>CONN: connection = open
+  CONN->>IDX: onReady()
+  IDX->>IDX: health report + cek yt-dlp (non-blocking)
+  IDX->>IDX: setInterval backup 24 jam
+```
+
+Saat koneksi putus, `connection.js` membedakan gangguan sementara dan sesi permanen:
+
+```mermaid
+flowchart TD
+  CLOSE["Koneksi tertutup"] --> STOPPING{"stopping?"}
+  STOPPING -- ya --> END["berhenti"]
+  STOPPING -- tidak --> FATAL{"status fatal?<br/>loggedOut, forbidden,<br/>multideviceMismatch,<br/>connectionReplaced"}
+  FATAL -- ya --> ONSHUT["onFatal → shutdown(1)"]
+  FATAL -- tidak --> BACKOFF["reconnect backoff<br/>0,5s sampai 30s + jitter"]
+  BACKOFF --> START["connection.start()"]
+
+  SIG["SIGINT / SIGTERM"] --> DRAIN["handler.drain(5s)"]
+  DRAIN --> SOCKSTOP["connection.stop()"]
+  SOCKSTOP --> DISPOSE["handler.dispose()"]
+  DISPOSE --> BAK["backup 'shutdown'"]
+  BAK --> DBC["db.close()"]
+  DBC --> EXIT["process.exit()"]
+```
+
+`shutdown()` idempotent: pemanggilan berikutnya memakai promise yang sama. Backup terjadwal berjalan tiap 24 jam dan saat shutdown, dengan retensi `BACKUP_KEEP` (default 14).
+
+### 3. Alur pesan masuk
+
+```mermaid
+flowchart TD
+  A["messages.upsert"] --> B{"type = notify?"}
+  B -- tidak --> STOP["abaikan"]
+  B -- ya --> C["Promise.allSettled untuk setiap pesan"]
+  C --> D{"remoteJid ada,<br/>bukan fromMe,<br/>message ada?"}
+  D -- tidak --> STOP
+  D -- ya --> E{"status, broadcast,<br/>atau newsletter?"}
+  E -- ya --> STOP
+  E -- tidak --> F{"ID pesan sudah diproses?"}
+  F -- ya --> STOP
+  F -- tidak --> G["unwrapMessage + extractText"]
+  G --> H{"ada teks?"}
+  H -- tidak --> STOP
+  H -- ya --> I["guard.enforce() bila grup"]
+  I --> J{"guard menangani pesan?"}
+  J -- ya --> K["stat guard:handled"] --> STOP
+  J -- tidak --> L["grantPassiveXp()"]
+  L --> M["parseCommand(prefix)"]
+  M --> N{"command dikenali?"}
+  N -- ya --> O["queue per chat"]
+  N -- tidak --> O
+  O --> P{"alur"}
+  P -- command --> Q["processCommand()"]
+  P -- teks biasa --> R["maybeChatbot()"]
+```
+
+Semua pesan yang lolos filter masuk ke queue yang sama. Queue bersifat **per chat**: pesan dari chat yang sama diproses berurutan, sedangkan chat berbeda berjalan paralel. Batas default 50 pesan menunggu per chat dan 500 chat aktif; bila penuh, pesan dilewati dan dicatat di log.
+
+**Cabang command:**
+
+```mermaid
+flowchart TD
+  A["processCommand()"] --> B["buildContext()<br/>identitas, peran, db, services"]
+  B --> C{"registry.get(nama)"}
+  C -- tidak --> D["handleUnknownCommand()<br/>balas maksimal sekali per 15 detik"]
+  C -- ya --> E["pipeline middleware"]
+  E --> F["executeCommand()<br/>withTimeout(timeoutMs)"]
+  F --> G{"return string?"}
+  G -- ya --> H["ctx.reply()"]
+  G -- tidak --> I["selesai"]
+  F --> J["statistik command:total,<br/>per command, user, grup"]
+  E -. error .-> K["handleError()<br/>log + pesan generik"]
+```
+
+Command tidak dikenal tidak dibalas di mode `private`/`self` bila pengirim bukan owner, supaya keberadaan bot tidak bocor. Command yang mengembalikan string otomatis dikirim sebagai balasan; command yang mengirim media mengembalikan `null`.
+
+**Cabang chatbot:**
+
+```mermaid
+flowchart TD
+  A["maybeChatbot()"] --> B{"AI aktif dan<br/>chatbot on di chat ini?"}
+  B -- tidak --> STOP["berhenti"]
+  B -- ya --> C{"maintenance atau<br/>pengirim/grup dibanned?"}
+  C -- ya --> STOP
+  C -- tidak --> D{"grup?"}
+  D -- ya --> E{"mention bot atau<br/>reply pesan bot?"}
+  E -- tidak --> STOP
+  E -- ya --> F["ambil riwayat aiMemory"]
+  D -- tidak --> F
+  F --> G["ai.generate()"]
+  G --> H["kirim balasan + simpan riwayat"]
+```
+
+Status chatbot disimpan di database: `group_settings.chatbot` untuk grup dan `settings.chatbot:<jid>` untuk chat pribadi. Riwayat AI hanya di memori (30 menit, maksimal 20 pesan per scope) dan di-reset lewat `.resetai`.
+
+### 4. Pipeline middleware
+
+Urutan ini hanya berjalan untuk command, bukan chatbot:
+
+```mermaid
+flowchart LR
+  N["1 normalize<br/>identitas + role"] --> B["2 banned"]
+  B --> M["3 maintenance"]
+  M --> MO["4 mode"]
+  MO --> P["5 permission"]
+  P --> S["6 scope"]
+  S --> C["7 cooldown"]
+  C --> R["8 rate limit"]
+  R --> X["execute command"]
+```
+
+| Middleware | Yang dicek | Pengecualian |
+|---|---|---|
+| `normalize` | Identitas pengirim, metadata grup, role, daftar user/grup di DB. | — |
+| `banned` | User/grup yang diblokir owner. | Owner selalu lolos. Grup diblokir diabaikan tanpa balasan; user diblokir diberi tahu sekali per 10 menit. |
+| `maintenance` | Status maintenance runtime. | Owner dan command `maintenanceSafe`. |
+| `mode` | `public`, `private`, atau `self`. | Owner selalu lolos. `private` mengizinkan admin grup; `self` hanya owner. |
+| `permission` | Hierarki `user < premium < admin < owner`. | — |
+| `scope` | `all`, `group`, atau `private`. | — |
+| `cooldown` | Cooldown per pengirim + command. | Owner. Default 3 detik bila manifest tidak mengisi. |
+| `rate limit` | Sliding window per pengirim. | Owner. Default 20 command per 60 detik. |
+
+Middleware yang tidak memanggil `next()` menghentikan pipeline. Error di command ditangkap `handleError`, dicatat, dan pengguna menerima pesan yang aman (detail internal tidak dikirim).
+
+### 5. Guard dan event grup
+
+**Guard** berjalan untuk seluruh pesan teks grup, termasuk pesan yang berisi command:
+
+```mermaid
+flowchart TD
+  A["Pesan grup"] --> B{"antilink / antispam aktif?"}
+  B -- tidak --> OK["lanjut ke command/chatbot"]
+  B -- ya --> C["ambil metadata grup"]
+  C --> D{"pengirim admin grup<br/>atau owner bot?"}
+  D -- ya --> OK
+  D -- tidak --> E{"melanggar link<br/>atau spam?"}
+  E -- tidak --> OK
+  E -- ya --> F{"bot admin grup?"}
+  F -- tidak --> OK
+  F -- ya --> G["hapus pesan"]
+  G --> H{"aksi guard"}
+  H -- delete --> OK2["selesai, pesan dihentikan"]
+  H -- kick --> I["keluarkan anggota<br/>+ audit + notifikasi"] --> OK2
+  H -- warn --> J["tambah warning"]
+  J --> K{"warning mencapai batas?"}
+  K -- belum --> OK2
+  K -- ya --> L{"bot masih admin?"}
+  L -- ya --> M["kick + audit + notifikasi"] --> OK2
+  L -- tidak --> N["beri tahu bahwa bot butuh admin"] --> OK2
+```
+
+Deteksi spam memakai 6 pesan dalam 5 detik atau 3 pesan teks identik dalam 10 detik. Batas warning default 3 dan bisa diubah `.setwarnlimit` (1–10). Bila guard sudah menangani pesan, command di pesan tersebut tidak dieksekusi.
+
+**Event grup** (welcome/goodbye) tidak lewat handler pesan:
+
+```mermaid
+sequenceDiagram
+  participant WA as WhatsApp
+  participant CONN as connection
+  participant GE as groupEvents
+  participant DB as SQLite
+
+  WA->>CONN: group-participants.update
+  CONN->>CONN: invalidate cache metadata grup
+  CONN->>GE: handle(event)
+  GE->>DB: getGroupSetting(welcome/goodbye)
+  alt Nonaktif atau aksi bukan add/remove
+    GE-->>CONN: selesai
+  else Aktif
+    GE->>CONN: getGroupMetadata()
+    GE->>GE: render template {name}, {mention}, {group}, {desc}, {count}
+    GE->>WA: sendMessage(teks + mentions)
+  end
+```
+
+Promote/demote sengaja tidak mengirim pesan. Maksimal 10 peserta diproses per event dan template dibatasi 1.000 karakter.
+
+### 6. Alur layanan domain
+
+**Media dasar** (`.sticker`, `.toimg`, `.tomp3`, `.topdf`, `.qr`, `.readqr`):
+
+```mermaid
+flowchart LR
+  A["Command media"] --> B["sumber input:<br/>media pesan/quoted atau teks argumen"]
+  B --> C{"butuh media?"}
+  C -- ya --> D["findMedia() + cek ukuran/durasi"]
+  D --> E["downloadMediaMessage()"]
+  E --> G{"jenis proses"}
+  C -- tidak --> G
+  G -- gambar --> H["sharp<br/>sticker / PNG"]
+  G -- audio --> I["FFmpeg<br/>MP3"]
+  G -- teks/gambar --> J["pdf-lib<br/>PDF"]
+  G -- QR --> K["qrcode / jsqr"]
+  H --> L["kirim hasil"]
+  I --> L
+  J --> L
+  K --> L
+```
+
+Dependency opsional (`sharp`, `pdf-lib`, `qrcode`, `jsqr`) dimuat dengan aman; bila salah satu tidak ada, hanya fitur terkait yang dinonaktifkan dan command memberi tahu pengguna.
+
+**Downloader** (`.ytmp3`, `.ytmp4`, `.tiktok`, `.ig`, `.fb`, `.x`, `.threads`, `.pinterest`, `.spotify`, `.soundcloud`):
+
+```mermaid
+flowchart TD
+  A["Command downloader"] --> B["validasi URL<br/>http/https, port 80/443,<br/>host allowlist, tolak host internal"]
+  B --> C{"platform"}
+  C -- YouTube/TikTok/IG/X/Threads/SoundCloud --> D{"yt-dlp tersedia?"}
+  D -- tidak --> E["balas dependency belum siap"]
+  D -- ya --> F["limiter: maksimal 2 unduhan paralel"]
+  F --> G["direktori temporary sendiri"]
+  G --> H["satu proses yt-dlp:<br/>metadata + unduhan"]
+  H --> I["ffprobe: cek durasi + audio"]
+  I --> J["normalisasi H.264 + AAC<br/>atau audio MP3/M4A"]
+  J --> K["kirim lewat path file"]
+  C -- Spotify/Pinterest/Facebook --> L["scraper sumber<br/>tanpa yt-dlp"]
+  L --> M["fetchFile()<br/>batas ukuran + timeout"]
+  M --> K
+  K --> N["cleanup file temporary"]
+```
+
+Downloader memakai allowlist platform, batas ukuran (`DOWNLOAD_MAX_MB`), durasi (`DOWNLOAD_MAX_DURATION_SEC`), timeout, dan antrean. Auto-install yt-dlp hanya dari rilis resmi GitHub dengan verifikasi checksum SHA-256 dan nonaktif secara default. File sementara selalu dibersihkan di blok `finally`.
+
+**AI** (`.ai`, `.summary`, `.translate`, `.chatbot`, `.resetai`):
+
+```mermaid
+flowchart TD
+  A["Command AI / chatbot"] --> B{"AI_ENABLED?"}
+  B -- tidak --> X["balas fitur nonaktif"]
+  B -- ya --> C{"kuota harian scope habis?"}
+  C -- ya --> Y["balas kuota habis"]
+  C -- tidak --> D["susun pesan/input + riwayat"]
+  D --> E["coba provider berikutnya<br/>(utama → fallback)"]
+  E --> F{"berhasil?"}
+  F -- ya --> G["record quota + balas"]
+  F -- tidak --> H["catat gagal, lanjut fallback"]
+  H --> I{"masih ada provider?"}
+  I -- ya --> E
+  I -- tidak --> J["balas semua provider gagal"]
+  F -. 429 .-> K["rotasi API key"]
+  K --> E
+```
+
+`AiService` memakai key pool, rotasi key saat rate limit, retry ringan, circuit breaker (3 kegagalan → jeda 30 detik), kuota harian per user/chat, dan redaksi API key dari log/error.
+
+**Ekonomi** — setiap pesan valid memberi XP pasif 10–20 dengan cooldown 45 detik. `.daily` memberi 500 koin + 150 XP sekali per 24 jam; level dihitung dari total XP `50 × n × (n − 1)`. `.balance`, `.level`, dan `.leaderboard` membaca data yang sama di tabel `users`.
+
+### 7. Data dan persistensi
+
+```mermaid
+erDiagram
+  SETTINGS {
+    TEXT key PK
+    TEXT value
+    INTEGER updated_at
+  }
+  USERS {
+    TEXT jid PK
+    TEXT lid
+    TEXT name
+    INTEGER is_premium
+    INTEGER is_banned
+    INTEGER command_count
+    INTEGER balance
+    INTEGER xp
+    INTEGER level
+    INTEGER last_daily
+    INTEGER last_xp_at
+    INTEGER created_at
+    INTEGER updated_at
+  }
+  GROUPS {
+    TEXT jid PK
+    TEXT name
+    INTEGER is_banned
+    INTEGER command_count
+    INTEGER created_at
+    INTEGER updated_at
+  }
+  GROUP_SETTINGS {
+    TEXT group_jid FK
+    TEXT key
+    TEXT value
+    INTEGER updated_at
+  }
+  WARNINGS {
+    INTEGER id PK
+    TEXT group_jid
+    TEXT user_jid
+    TEXT reason
+    TEXT warned_by
+    INTEGER created_at
+  }
+  STATS {
+    TEXT key PK
+    INTEGER value
+    INTEGER updated_at
+  }
+  AUDIT_LOGS {
+    INTEGER id PK
+    TEXT actor_jid
+    TEXT action
+    TEXT target
+    TEXT meta
+    INTEGER created_at
+  }
+  MIGRATIONS {
+    INTEGER version PK
+    TEXT name
+    INTEGER applied_at
+  }
+
+  GROUPS ||--o{ GROUP_SETTINGS : memiliki
+  GROUPS ||--o{ WARNINGS : mencatat
+  USERS ||--o{ WARNINGS : menerima
+```
+
+Database memakai `better-sqlite3` dengan prepared statement dan migrasi berurutan (skema awal, ban-control, economy). Nilai kompleks seperti metadata audit disimpan sebagai JSON di kolom `TEXT`.
+
+Backup berjalan otomatis tiap 24 jam dan saat shutdown. `.backup` membuat backup + verifikasi, `.backup verify` mengecek integritas dan jumlah baris, dan `.restore` memulihkan in-place lewat `ATTACH DATABASE` dalam satu transaksi. Restore hanya menerima backup dengan versi skema yang sama, dan membuat backup pengaman sebelum menimpa data.
+
+### 8. Batas dan aturan runtime
+
+| Aturan | Nilai default | Sumber |
+|---|---|---|
+| Timeout command | 30 detik | `COMMAND_TIMEOUT_MS` |
+| Timeout command berat | Diatur per manifest, mis. downloader 660 detik | `timeoutMs` command |
+| Cooldown command | 3 detik | `COMMAND_COOLDOWN` |
+| Rate limit | 20 command / 60 detik | `RATE_LIMIT_MAX`, `RATE_LIMIT_WINDOW_MS` |
+| Queue per chat | 50 pesan menunggu | `QUEUE_MAX_PENDING` |
+| Deduplikasi pesan | 1.000 ID terakhir | `core/handler.js` |
+| Batas media | 16 MB | `MEDIA_MAX_MB` |
+| Batas unduhan | 16 MB / 900 detik | `DOWNLOAD_MAX_MB`, `DOWNLOAD_MAX_DURATION_SEC` |
+| Retensi backup | 14 file | `BACKUP_KEEP` |
+
+Mode bot disimpan di database sehingga bertahan setelah restart:
+
+- **public** — semua orang boleh memakai command.
+- **private** — owner dan admin grup.
+- **self** — owner saja.
+
+Perubahan mode dan maintenance dilakukan lewat command owner dan langsung berlaku tanpa restart. Semua akses database lewat `core/database`, sehingga command tidak menulis SQL sendiri.
 
 Panduan menambah command ada di [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
