@@ -26,6 +26,7 @@ const {
 } = require('../utils/text');
 const { getContextInfo } = require('../utils/group');
 const { isChatbotEnabled } = require('../utils/chatbot');
+const { getDefaultGameManager } = require('../services/gameManager');
 const {
   PASSIVE_XP_MIN,
   PASSIVE_XP_MAX,
@@ -68,6 +69,7 @@ function createMessageHandler({
 }) {
   const pipeline = compose(middlewares);
   const translator = createTranslator(config.defaultLang);
+  const gameManager = services.gameManager || getDefaultGameManager();
 
   const seenIds = new Set();
   const seenQueue = [];
@@ -386,6 +388,20 @@ function createMessageHandler({
     ctx.command = registry.get(parsed.commandName);
 
     if (!ctx.command) {
+      // `.nyerah` / `.surrender` tetap bekerja meski bukan command terdaftar.
+      if (
+        (parsed.commandName === 'nyerah' || parsed.commandName === 'surrender')
+        && gameManager.isActive(ctx.chatId)
+      ) {
+        await gameManager.surrender({
+          chatId: ctx.chatId,
+          senderId: ctx.senderId,
+          senderName: ctx.senderName,
+          reply: ctx.reply,
+        });
+        return;
+      }
+
       await handleUnknownCommand(ctx);
       return;
     }
@@ -472,6 +488,23 @@ function createMessageHandler({
       await chatQueue.run(
         normalizeJid(chatId),
         () => processCommand(sock, msg, parsed, text),
+      );
+      return;
+    }
+
+    // Pesan biasa (bukan command) → teruskan ke sesi game aktif di chat ini.
+    const normalizedChat = normalizeJid(chatId);
+    if (gameManager.isActive(normalizedChat) && gameManager.accepts(normalizedChat, text)) {
+      const senderId = collectSenderIds(msg, chatId)[0] || chatId;
+      await chatQueue.run(
+        normalizedChat,
+        () => gameManager.handleInput({
+          chatId: normalizedChat,
+          senderId,
+          senderName: msg.pushName || '',
+          text,
+          reply: (body) => sock.sendMessage(chatId, { text: String(body) }, { quoted: msg }),
+        }),
       );
       return;
     }

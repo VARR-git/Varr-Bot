@@ -211,6 +211,15 @@
     },
     "leaderboard": {
       "description": "Show the top 10 users by coins or level"
+    },
+    "ttt": {
+      "description": "Tic-Tac-Toe against the bot or another player"
+    },
+    "hangman": {
+      "description": "Guess the word letter by letter before lives run out"
+    },
+    "trivia": {
+      "description": "Multiple-choice quiz with coin and XP rewards"
     }
   },
   "ai": {
@@ -558,5 +567,46 @@
     "welcomeDefault": "👋 Welcome {mention} to *{group}*!",
     "goodbyeDefault": "👋 {name} has left *{group}*.",
     "fallbackGroup": "this group"
+  },
+  "games": {
+    "busy": "⚠️ There is already an active game in this chat. Finish it first or type *nyerah*.",
+    "timeout": "⏰ Time is up. The *{game}* game was cancelled.",
+    "surrender": {
+      "done": "🏳️ {player} gave up. The game has ended."
+    },
+    "ttt": {
+      "name": "Tic-Tac-Toe",
+      "started": "🎮 *Tic-Tac-Toe* ({mode})\n\n{board}\n\n{player}'s turn. Type a number *1-9* to fill a box.",
+      "board": "{board}\n\n{player}'s turn.",
+      "modePvp": "PvP",
+      "modeBot": "against the Bot",
+      "turn": "{player}'s turn",
+      "invalid": "⚠️ That box is already taken. Pick an empty number 1-9.",
+      "notPlayer": "⚠️ You are not a player in this game.",
+      "notTurn": "⏳ It is not your turn. Wait for {player}.",
+      "win": "🏆 *{player} wins!*\n\n{board}\n\n+{coins} coins, +{xp} XP.",
+      "botWin": "🤖 The bot wins!\n\n{board}",
+      "draw": "🤝 *Draw!*\n\n{board}\n\nEveryone gets {coins} coins."
+    },
+    "hangman": {
+      "name": "Hangman",
+      "title": "🎮 *Hangman*",
+      "intro": "🎮 *Hangman* — guess this word. Type one letter, or guess the whole word.",
+      "status": "{lives}\n🔤 Guessed: {guessed}",
+      "correct": "✅ Correct!",
+      "wrong": "❌ Wrong, you lost a life.",
+      "wrongWord": "❌ That word is wrong, you lost a life.",
+      "already": "⚠️ The letter *{letter}* was already guessed.",
+      "win": "🏆 *Word guessed: {word}*\n\n+{coins} coins, +{xp} XP.",
+      "lose": "💀 Out of lives. The correct word was: *{word}*."
+    },
+    "trivia": {
+      "name": "Trivia",
+      "title": "🧠 *Trivia*",
+      "prompt": "Answer with *A*, *B*, *C*, or *D*.",
+      "invalid": "⚠️ Pick answer A, B, C, or D.",
+      "wrong": "❌ Answer *{answer}* is wrong. Try again!",
+      "correct": "✅ Correct! Answer: *{answer}*\n\n🏆 {player} wins +{coins} coins, +{xp} XP."
+    }
   }
 }

@@ -211,6 +211,15 @@
     },
     "leaderboard": {
       "description": "Tampilkan top 10 user berdasarkan koin atau level"
+    },
+    "ttt": {
+      "description": "Tic-Tac-Toe melawan bot atau pemain lain"
+    },
+    "hangman": {
+      "description": "Tebak kata huruf demi huruf sebelum nyawa habis"
+    },
+    "trivia": {
+      "description": "Kuis pilihan ganda berhadiah koin dan XP"
     }
   },
   "ai": {
@@ -553,6 +562,47 @@
       "levelValue": "Lv {level} ({xp} XP)"
     },
     "levelUp": "🎉 Level naik ke *{level}*!"
+  },
+  "games": {
+    "busy": "⚠️ Masih ada game aktif di chat ini. Selesaikan dulu atau ketik *nyerah*.",
+    "timeout": "⏰ Waktu habis. Game *{game}* dibatalkan.",
+    "surrender": {
+      "done": "🏳️ {player} menyerah. Game dihentikan."
+    },
+    "ttt": {
+      "name": "Tic-Tac-Toe",
+      "started": "🎮 *Tic-Tac-Toe* ({mode})\n\n{board}\n\nGiliran {player}. Ketik angka *1-9* untuk mengisi kotak.",
+      "board": "{board}\n\nGiliran {player}.",
+      "modePvp": "PvP",
+      "modeBot": "melawan Bot",
+      "turn": "Giliran {player}",
+      "invalid": "⚠️ Kotak itu sudah terisi. Pilih angka 1-9 yang kosong.",
+      "notPlayer": "⚠️ Kamu bukan pemain di game ini.",
+      "notTurn": "⏳ Bukan giliranmu. Tunggu {player}.",
+      "win": "🏆 *{player} menang!*\n\n{board}\n\n+{coins} koin, +{xp} XP.",
+      "botWin": "🤖 Bot menang!\n\n{board}",
+      "draw": "🤝 *Seri!*\n\n{board}\n\nMasing-masing dapat {coins} koin."
+    },
+    "hangman": {
+      "name": "Hangman",
+      "title": "🎮 *Hangman*",
+      "intro": "🎮 *Hangman* — tebak kata ini. Ketik satu huruf, atau langsung tebak kata utuhnya.",
+      "status": "{lives}\n🔤 Ditebak: {guessed}",
+      "correct": "✅ Benar!",
+      "wrong": "❌ Salah, nyawa berkurang.",
+      "wrongWord": "❌ Kata itu salah, nyawa berkurang.",
+      "already": "⚠️ Huruf *{letter}* sudah ditebak.",
+      "win": "🏆 *Kata tertebak: {word}*\n\n+{coins} koin, +{xp} XP.",
+      "lose": "💀 Nyawa habis. Kata yang benar: *{word}*."
+    },
+    "trivia": {
+      "name": "Trivia",
+      "title": "🧠 *Trivia*",
+      "prompt": "Jawab dengan *A*, *B*, *C*, atau *D*.",
+      "invalid": "⚠️ Pilih jawaban A, B, C, atau D.",
+      "wrong": "❌ Jawaban *{answer}* salah. Coba lagi!",
+      "correct": "✅ Benar! Jawaban: *{answer}*\n\n🏆 {player} menang +{coins} koin, +{xp} XP."
+    }
   },
   "groupEvents": {
     "welcomeDefault": "👋 Selamat datang {mention} di *{group}*!",
