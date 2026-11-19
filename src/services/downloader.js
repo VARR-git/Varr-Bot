@@ -24,6 +24,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const https = require('node:https');
 const crypto = require('node:crypto');
+const { Readable } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
 const { spawn } = require('node:child_process');
 const { AppError } = require('../core/errors');
 
@@ -36,11 +38,41 @@ const PLATFORMS = Object.freeze({
     label: 'TikTok',
     hosts: ['tiktok.com'],
   }),
+  instagram: Object.freeze({
+    label: 'Instagram',
+    hosts: ['instagram.com', 'instagr.am'],
+  }),
+  facebook: Object.freeze({
+    label: 'Facebook',
+    hosts: ['facebook.com', 'fb.com', 'fb.watch'],
+  }),
+  x: Object.freeze({
+    label: 'X',
+    hosts: ['x.com', 'twitter.com', 't.co'],
+  }),
+  threads: Object.freeze({
+    label: 'Threads',
+    hosts: ['threads.net', 'threads.com'],
+  }),
+  pinterest: Object.freeze({
+    label: 'Pinterest',
+    hosts: ['pinterest.com', 'pin.it'],
+  }),
+  spotify: Object.freeze({
+    label: 'Spotify',
+    hosts: ['spotify.com', 'spotify.link'],
+  }),
+  soundcloud: Object.freeze({
+    label: 'SoundCloud',
+    hosts: ['soundcloud.com', 'soundcloud.app.goo.gl', 'on.soundcloud.com'],
+  }),
 });
 
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
 const ALLOWED_PORTS = new Set(['', '80', '443']);
 const MAX_URL_LENGTH = 2_048;
+const VIDEO_RESOLUTIONS = Object.freeze([1080, 720, 480, 360, 240, 144]);
+const DEFAULT_VIDEO_RESOLUTION = 720;
 const MAX_STDOUT_BYTES = 8 * 1024 * 1024;
 const MAX_STDERR_BYTES = 512 * 1024;
 const FFPROBE_TIMEOUT_MS = 30_000;
@@ -72,6 +104,18 @@ const MIME_BY_EXT = Object.freeze({
   webp: 'image/webp',
 });
 
+const SPOTIFY_BASE = 'https://spotidown.app';
+const SPOTIFY_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
+const SPOTIFY_TIMEOUT_MS = 20_000;
+
+const PINTEREST_USER_AGENT = 'Mozilla/5.0 (Linux; Android 12; SAMSUNG SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/17.0 Chrome/96.0.4664.104 Mobile Safari/537.36';
+const PINTEREST_TIMEOUT_MS = 20_000;
+
+const FACEBOOK_BASE = 'https://fbdownloader.to';
+const FACEBOOK_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
+const FACEBOOK_TIMEOUT_MS = 20_000;
+
+
 /**
  * @param {string} hostname
  * @returns {boolean}
@@ -102,7 +146,7 @@ function hostMatches(hostname, allowed) {
  * command ke pesan pengguna.
  *
  * @param {string} raw
- * @param {'youtube'|'tiktok'} [platform]
+ * @param {'youtube'|'tiktok'|'instagram'|'facebook'|'x'|'threads'|'pinterest'|'spotify'|'soundcloud'} [platform]
  * @returns {{url: string, host: string, platform: string}}
  */
 function validateMediaUrl(raw, platform) {
@@ -142,6 +186,29 @@ function validateMediaUrl(raw, platform) {
   }
 
   return { url: parsed.toString(), host, platform: platform || 'unknown' };
+}
+
+/**
+ * Validasi pilihan resolusi video. Nilai kosong memakai default 720p.
+ *
+ * @param {string|number|null|undefined} value
+ * @param {number} [fallback]
+ * @returns {number}
+ */
+function parseResolution(value, fallback = DEFAULT_VIDEO_RESOLUTION) {
+  if (value === undefined || value === null || String(value).trim() === '') {
+    return fallback;
+  }
+
+  // Number = sudah diparse pemanggil (mis. command), string = "720p".
+  const match = /^(\d{3,4})p$/i.exec(String(value).trim());
+  const height = typeof value === 'number' ? value : (match ? Number(match[1]) : NaN);
+
+  if (!VIDEO_RESOLUTIONS.includes(height)) {
+    throw new AppError('DOWNLOAD_INVALID_RESOLUTION', 'Format resolusi tidak sesuai');
+  }
+
+  return height;
 }
 
 /**
@@ -413,6 +480,381 @@ function httpsDownload(url, destination, {
 
     attempt(url, redirects);
   });
+}
+
+/**
+ * @param {unknown} value durasi "3:45" atau angka detik/milidetik
+ * @returns {number}
+ */
+function parseDurationSec(value) {
+  if (typeof value === 'number') {
+    return Math.max(0, Math.round(value > 10_000 ? value / 1_000 : value));
+  }
+
+  const parts = String(value || '').trim().split(':').map(Number);
+  if (parts.length > 0 && parts.every(Number.isFinite)) {
+    return parts.reduce((total, part) => total * 60 + part, 0);
+  }
+
+  return Math.max(0, Math.round(Number(value) || 0));
+}
+
+/**
+ * Ambil metadata dan link MP3 Spotify lewat spotidown.app (tanpa API key).
+ *
+ * @param {string} url
+ * @param {{fetchImpl?: typeof fetch, logger?: object}} [options]
+ * @returns {Promise<{title: string, artist: string, album: string, durationSec: number, releaseYear: string|null, coverUrl: string|null, mp3Url: string|null}>}
+ */
+async function scrapeSpotify(url, { fetchImpl = fetch, logger } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SPOTIFY_TIMEOUT_MS);
+  timer.unref?.();
+
+  const post = async (pathname, body, cookie) => {
+    const response = await fetchImpl(`${SPOTIFY_BASE}${pathname}`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'User-Agent': SPOTIFY_USER_AGENT,
+        Origin: SPOTIFY_BASE,
+        Referer: `${SPOTIFY_BASE}/`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        ...(cookie ? { Cookie: cookie } : {}),
+      },
+      body: new URLSearchParams(body),
+    });
+
+    let json = {};
+    try {
+      json = await response.json();
+    } catch {
+      // Respons bukan JSON; ditangani sebagai kegagalan di bawah.
+    }
+
+    if (!response.ok || json.error) {
+      throw new AppError(
+        'DOWNLOAD_UNAVAILABLE',
+        json.message || `Sumber Spotify gagal (HTTP ${response.status}).`,
+      );
+    }
+
+    return { response, json };
+  };
+
+  try {
+    const first = await post('/action', { url, 'g-recaptcha-response': '' });
+    const html = first.json.data ?? '';
+    const dataVal = html.match(/name="data"\s+value=['"]([^'"]+)['"]/i)?.[1];
+    const baseVal = html.match(/name="base"\s+value=['"]([^'"]+)['"]/i)?.[1];
+    const tokenVal = html.match(/name="token"\s+value=['"]([^'"]+)['"]/i)?.[1];
+
+    if (!dataVal || !tokenVal) {
+      throw new AppError('DOWNLOAD_UNAVAILABLE', 'Gagal membaca token dari sumber Spotify.');
+    }
+
+    let meta = {};
+    try {
+      meta = JSON.parse(Buffer.from(dataVal, 'base64').toString('utf8')) || {};
+    } catch {
+      logger?.warn?.({}, 'Metadata Spotify tidak terbaca; melanjutkan unduhan');
+    }
+    if (typeof meta !== 'object' || Array.isArray(meta)) meta = {};
+
+    const rawCookies = typeof first.response.headers.getSetCookie === 'function'
+      ? first.response.headers.getSetCookie()
+      : [first.response.headers.get('set-cookie')];
+    const cookie = (rawCookies || [])
+      .filter(Boolean)
+      .map((value) => value.split(';')[0])
+      .join('; ');
+
+    const second = await post('/action/track', {
+      data: dataVal,
+      base: baseVal ?? url,
+      token: tokenVal,
+    }, cookie);
+
+    const html2 = second.json.data ?? '';
+    // shortcut: regex bergantung pada markup spotidown; upgrade ke API resmi
+    // bila markup berubah.
+    const mp3Url = html2.match(
+      /<a\b[^>]*href=["']([^"']+)["'][^>]*>\s*<span>\s*<span>\s*Download Mp3\s*<\/span>\s*<\/span>/i,
+    )?.[1] || null;
+
+    return {
+      title: String(meta.name || ''),
+      artist: String(meta.artist || ''),
+      album: String(meta.album || ''),
+      durationSec: parseDurationSec(meta.duration),
+      releaseYear: meta.date ? String(meta.date) : null,
+      coverUrl: meta.cover ? String(meta.cover) : null,
+      mp3Url,
+    };
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new AppError('DOWNLOAD_TIMEOUT', 'Sumber Spotify timeout.');
+    }
+    throw error instanceof AppError
+      ? error
+      : new AppError('DOWNLOAD_FAILED', `Spotify gagal: ${error.message}`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * @param {unknown} value durasi ISO 8601, mis. "PT1M30S"
+ * @returns {number}
+ */
+function parseIsoDuration(value) {
+  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/i.exec(String(value || '').trim());
+  if (!match) return 0;
+  return Math.round((Number(match[1]) || 0) * 3600 + (Number(match[2]) || 0) * 60 + (Number(match[3]) || 0));
+}
+
+/**
+ * Ambil metadata dan URL media Pinterest dari HTML halaman pin.
+ *
+ * @param {string} url
+ * @param {{fetchImpl?: typeof fetch, logger?: object}} [options]
+ * @returns {Promise<{title: string, image: string, video: string, durationSec: number}>}
+ */
+async function scrapePinterest(url, { fetchImpl = fetch, logger } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PINTEREST_TIMEOUT_MS);
+  timer.unref?.();
+
+  try {
+    const response = await fetchImpl(url, {
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: {
+        'User-Agent': PINTEREST_USER_AGENT,
+        'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+      },
+    });
+    const finalUrl = response.url ? new URL(response.url) : null;
+
+    if (!response.ok || (finalUrl && isPrivateHost(finalUrl.hostname))) {
+      throw new AppError('DOWNLOAD_UNAVAILABLE', `Sumber Pinterest gagal (HTTP ${response.status}).`);
+    }
+
+    const html = await response.text();
+    const snippet = (id) => {
+      // shortcut: regex bergantung pada markup Pinterest; upgrade ke API resmi
+      // bila markup berubah.
+      const raw = new RegExp(
+        `<script[^>]*data-test-id=["']${id}["'][^>]*>([\\s\\S]*?)<\\/script>`,
+        'i',
+      ).exec(html)?.[1];
+      if (!raw) return {};
+      try {
+        const value = JSON.parse(raw);
+        return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+      } catch {
+        logger?.warn?.({ id }, 'Snippet Pinterest tidak bisa diparse');
+        return {};
+      }
+    };
+
+    const leaf = snippet('leaf-snippet');
+    const video = snippet('video-snippet');
+    const imageUrl = String(leaf.image || video.thumbnailUrl || '');
+    const videoUrl = String(video.contentUrl || '');
+
+    if (!imageUrl && !videoUrl) {
+      throw new AppError('DOWNLOAD_UNAVAILABLE', 'Media Pinterest tidak ditemukan.');
+    }
+
+    return {
+      title: String(leaf.name || leaf.headline || video.name || leaf.title || video.description || ''),
+      image: imageUrl,
+      video: videoUrl,
+      durationSec: parseIsoDuration(video.duration) || parseDurationSec(video.duration),
+    };
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new AppError('DOWNLOAD_TIMEOUT', 'Sumber Pinterest timeout.');
+    }
+    throw error instanceof AppError
+      ? error
+      : new AppError('DOWNLOAD_FAILED', `Pinterest gagal: ${error.message}`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Ambil link video Facebook lewat fbdownloader.to (tanpa API key).
+ *
+ * @param {string} url
+ * @param {{fetchImpl?: typeof fetch, logger?: object}} [options]
+ * @returns {Promise<{quality: string, url: string}>}
+ */
+async function scrapeFacebook(url, { fetchImpl = fetch, logger } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FACEBOOK_TIMEOUT_MS);
+  timer.unref?.();
+
+  try {
+    const page = await fetchImpl(`${FACEBOOK_BASE}/id`, {
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: {
+        'User-Agent': FACEBOOK_USER_AGENT,
+        'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+      },
+    });
+
+    if (!page.ok) {
+      throw new AppError('DOWNLOAD_UNAVAILABLE', `Sumber Facebook gagal (HTTP ${page.status}).`);
+    }
+
+    const html = await page.text();
+    // shortcut: token diambil dari markup fbdownloader; upgrade ke API resmi
+    // bila markup berubah.
+    const token = /k_exp="(.*?)".*?k_token="(.*?)"/s.exec(html);
+    if (!token) {
+      throw new AppError('DOWNLOAD_UNAVAILABLE', 'Token sumber Facebook tidak ditemukan.');
+    }
+
+    const response = await fetchImpl(`${FACEBOOK_BASE}/api/ajaxSearch`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'User-Agent': FACEBOOK_USER_AGENT,
+        'X-Requested-With': 'XMLHttpRequest',
+        Origin: FACEBOOK_BASE,
+        Referer: `${FACEBOOK_BASE}/id`,
+      },
+      body: new URLSearchParams({
+        k_exp: token[1],
+        k_token: token[2],
+        p: 'home',
+        q: url,
+        lang: 'id',
+        v: 'v2',
+        W: '',
+      }),
+    });
+
+    let json = {};
+    try {
+      json = await response.json();
+    } catch {
+      // Respons bukan JSON; ditangani sebagai kegagalan di bawah.
+    }
+
+    if (!response.ok || !json.data) {
+      throw new AppError('DOWNLOAD_UNAVAILABLE', `Sumber Facebook gagal (HTTP ${response.status}).`);
+    }
+
+    // shortcut: parsing bergantung pada markup fbdownloader; upgrade ke API
+    // resmi bila markup berubah.
+    const rowRegex = /<td class="video-quality">(.*?)<\/td>[\s\S]*?(?:href="(.*?)"|data-videourl="(.*?)")/g;
+    const results = [];
+    let match;
+    while ((match = rowRegex.exec(json.data)) !== null) {
+      const quality = match[1].trim();
+      const mediaUrl = match[2] || match[3];
+      if (quality && mediaUrl) results.push({ quality, url: mediaUrl });
+    }
+
+    if (!results.length) {
+      throw new AppError('DOWNLOAD_UNAVAILABLE', 'Video Facebook tidak ditemukan.');
+    }
+
+    return results[0];
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new AppError('DOWNLOAD_TIMEOUT', 'Sumber Facebook timeout.');
+    }
+    throw error instanceof AppError
+      ? error
+      : new AppError('DOWNLOAD_FAILED', `Facebook gagal: ${error.message}`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Unduh URL langsung (hasil spotidown) ke file, dengan batas ukuran + timeout.
+ *
+ * @param {string} url
+ * @param {string} destination
+ * @param {{maxBytes: number, timeoutMs: number}} options
+ * @returns {Promise<number>} jumlah byte
+ */
+async function fetchFile(url, destination, { maxBytes, timeoutMs }) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new AppError('DOWNLOAD_FAILED', 'URL unduhan media tidak valid.');
+  }
+
+  if (parsed.protocol !== 'https:' || isPrivateHost(parsed.hostname)) {
+    throw new AppError('DOWNLOAD_FAILED', 'Host unduhan media tidak diizinkan.');
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  timer.unref?.();
+
+  try {
+    const response = await fetch(parsed, {
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: { 'User-Agent': SPOTIFY_USER_AGENT },
+    });
+    const finalUrl = response.url ? new URL(response.url) : null;
+
+    if (!response.ok || !response.body
+      || (finalUrl && (finalUrl.protocol !== 'https:' || isPrivateHost(finalUrl.hostname)))) {
+      await response.body?.cancel?.();
+      throw new AppError('DOWNLOAD_FAILED', `Unduhan media gagal (HTTP ${response.status}).`);
+    }
+
+    const length = Number(response.headers.get('content-length'));
+    if (Number.isFinite(length) && length > maxBytes) {
+      await response.body.cancel();
+      throw new AppError(
+        'DOWNLOAD_TOO_LARGE',
+        'File unduhan terlalu besar.',
+        undefined,
+        { max: Math.round(maxBytes / (1024 * 1024)) },
+      );
+    }
+
+    let received = 0;
+    const stream = Readable.fromWeb(response.body);
+    stream.on('data', (chunk) => {
+      received += chunk.length;
+      if (received > maxBytes) stream.destroy(new Error('File unduhan terlalu besar.'));
+    });
+
+    await pipeline(stream, fs.createWriteStream(destination, { flags: 'w', mode: 0o600 }));
+    return received;
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new AppError('DOWNLOAD_TIMEOUT', 'Unduhan media timeout.');
+    }
+    if (error?.message === 'File unduhan terlalu besar.') {
+      throw new AppError(
+        'DOWNLOAD_TOO_LARGE',
+        'File unduhan terlalu besar.',
+        undefined,
+        { max: Math.round(maxBytes / (1024 * 1024)) },
+      );
+    }
+    throw error instanceof AppError
+      ? error
+      : new AppError('DOWNLOAD_FAILED', `Unduhan media gagal: ${error.message}`);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -1049,15 +1491,21 @@ function createDownloaderService({
     return null;
   }
 
+  // yt-dlp menamai stream yang belum digabung `media.f<id>.<ext>`. File seperti
+  // ini tersisa bila merge dilewati karena total video+audio melebihi
+  // --max-filesize (yt-dlp tetap exit 0), jadi jangan dianggap hasil akhir.
+  const INTERMEDIATE_RE = /\.f[\w-]+\.[a-z0-9]+$/i;
+
   /**
    * Cari file hasil unduhan yang ekstensinya sesuai. File lain (mis. gambar
    * slideshow TikTok) dianggap media tidak didukung.
    *
    * @param {string} directory
    * @param {string[]} extensions
+   * @param {number} maxBytes
    * @returns {{path: string, ext: string, size: number}}
    */
-  function pickOutputFile(directory, extensions) {
+  function pickOutputFile(directory, extensions, maxBytes) {
     let names = [];
     try {
       names = fsImpl.readdirSync(directory);
@@ -1073,6 +1521,7 @@ function createDownloaderService({
         if (!stat.isFile() || stat.size <= 0) continue;
         files.push({
           path: fullPath,
+          name,
           ext: path.extname(name).slice(1).toLowerCase(),
           size: stat.size,
         });
@@ -1081,9 +1530,19 @@ function createDownloaderService({
       }
     }
 
-    const expected = files.filter((entry) => extensions.includes(entry.ext));
-    if (expected.length > 0) {
-      return expected.sort((a, b) => b.size - a.size)[0];
+    const expected = files
+      .filter((entry) => extensions.includes(entry.ext) && !INTERMEDIATE_RE.test(entry.name))
+      .sort((a, b) => b.size - a.size);
+    if (expected.length > 0) return expected[0];
+
+    if (files.some((entry) => INTERMEDIATE_RE.test(entry.name))) {
+      const maxMb = Math.round(maxBytes / (1024 * 1024));
+      throw new AppError(
+        'DOWNLOAD_TOO_LARGE',
+        `File melebihi batas ${maxMb} MB.`,
+        undefined,
+        { max: maxMb },
+      );
     }
 
     if (files.length > 0) {
@@ -1106,6 +1565,33 @@ function createDownloaderService({
       return stat.isFile() ? stat.size : 0;
     } catch {
       return 0;
+    }
+  }
+
+  /**
+   * Thumbnail JPEG kecil untuk payload WhatsApp. Kalau thumbnail dikirim
+   * sendiri, Baileys tidak perlu menyalin seluruh video ke file temp kedua
+   * hanya untuk membuat thumbnail — upload jadi lebih cepat.
+   *
+   * @param {string} file
+   * @param {string} workDir
+   * @returns {Promise<string|null>} JPEG base64, atau null bila gagal
+   */
+  async function makeThumbnail(file, workDir) {
+    const target = path.join(workDir, 'thumb.jpg');
+    const result = await runCommand(resolveFfmpeg(), [
+      '-hide_banner', '-loglevel', 'error', '-y',
+      '-ss', '0', '-i', file,
+      '-frames:v', '1', '-vf', 'scale=32:-2',
+      target,
+    ], { timeoutMs: FFPROBE_TIMEOUT_MS });
+
+    if (result.code !== 0 || fileSize(target) === 0) return null;
+
+    try {
+      return fsImpl.readFileSync(target).toString('base64');
+    } catch {
+      return null;
     }
   }
 
@@ -1151,7 +1637,7 @@ function createDownloaderService({
    * @param {string} file
    * @param {string} workDir
    * @param {{expectedDuration?: number, expectedAudio?: boolean}} [expect]
-   * @returns {Promise<string>} path file yang siap dikirim
+   * @returns {Promise<{file: string, thumbnail: string|null}>} file siap kirim + thumbnail base64
    */
   async function makeWhatsAppVideo(file, workDir, expect = {}) {
     const info = await probeVideoInfo(file);
@@ -1161,7 +1647,7 @@ function createDownloaderService({
         { ffprobe: resolveFfprobe() },
         'ffprobe tidak tersedia; kompatibilitas video WhatsApp tidak diverifikasi',
       );
-      return file;
+      return { file, thumbnail: null };
     }
 
     const video = info.streams.find((stream) => stream.codec_type === 'video');
@@ -1207,13 +1693,15 @@ function createDownloaderService({
         output,
       ], { timeoutMs: REMUX_TIMEOUT_MS });
 
-      if (remux.code === 0 && fileSize(output) > 0) return output;
+      if (remux.code === 0 && fileSize(output) > 0) {
+        return { file: output, thumbnail: await makeThumbnail(output, workDir) };
+      }
 
       logger?.warn?.(
         { error: sanitizeProcessError(remux.stderr) },
         'Remux faststart gagal; memakai file asli',
       );
-      return file;
+      return { file, thumbnail: null };
     }
 
     logger?.info?.(
@@ -1247,11 +1735,231 @@ function createDownloaderService({
       );
     }
 
-    return output;
+    return { file: output, thumbnail: await makeThumbnail(output, workDir) };
   }
 
   /**
-   * Unduh media dan kembalikan buffer. Direktori temporary selalu dihapus.
+   * Unduh track Spotify lewat spotidown (MP3 langsung, tanpa yt-dlp/FFmpeg).
+   *
+   * @param {{url: string}} options
+   * @returns {Promise<object>}
+   */
+  async function downloadSpotifyTrack({ url }) {
+    ensureTmpDir();
+    pruneTmp();
+
+    const track = await scrapeSpotify(url, { logger });
+
+    if (track.durationSec > maxDurationSec) {
+      throw new AppError(
+        'DOWNLOAD_TOO_LONG',
+        `Durasi ${formatClock(track.durationSec)} melebihi batas ${formatClock(maxDurationSec)}.`,
+        undefined,
+        { duration: formatClock(track.durationSec), max: formatClock(maxDurationSec) },
+      );
+    }
+
+    if (!track.mp3Url) {
+      throw new AppError('DOWNLOAD_UNAVAILABLE', 'Link MP3 Spotify tidak ditemukan.');
+    }
+
+    const workDir = fsImpl.mkdtempSync(path.join(tmpDir, TMP_PREFIX));
+    const title = track.artist
+      ? `${track.artist} - ${track.title}`
+      : track.title || 'Spotify';
+
+    try {
+      const target = path.join(workDir, safeFileName(title, 'mp3'));
+      await fetchFile(track.mp3Url, target, { maxBytes, timeoutMs });
+
+      const sizeBytes = fileSize(target);
+      if (sizeBytes === 0) {
+        throw new AppError('DOWNLOAD_FAILED', 'File Spotify kosong atau tidak terbaca.');
+      }
+
+      if (sizeBytes > maxBytes) {
+        throw new AppError(
+          'DOWNLOAD_TOO_LARGE',
+          `File melebihi batas ${Math.round(maxBytes / (1024 * 1024))} MB.`,
+          undefined,
+          { max: Math.round(maxBytes / (1024 * 1024)) },
+        );
+      }
+
+      return {
+        filePath: target,
+        ext: 'mp3',
+        mimetype: MIME_BY_EXT.mp3,
+        sizeBytes,
+        thumbnail: null,
+        platform: 'spotify',
+        kind: 'audio',
+        meta: {
+          title,
+          durationSec: track.durationSec,
+          author: track.artist,
+          webpageUrl: url,
+        },
+        cleanup: () => {
+          try {
+            fsImpl.rmSync(workDir, { recursive: true, force: true });
+          } catch {
+            // Cleanup tidak boleh menutupi hasil pengiriman.
+          }
+        },
+      };
+    } catch (error) {
+      try {
+        fsImpl.rmSync(workDir, { recursive: true, force: true });
+      } catch {
+        // Cleanup tidak boleh menutupi error utama.
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Unduh gambar/video Pinterest hasil scrape halaman pin (tanpa yt-dlp).
+   *
+   * @param {{url: string}} options
+   * @returns {Promise<object>}
+   */
+  async function downloadPinterestMedia({ url }) {
+    ensureTmpDir();
+    pruneTmp();
+
+    const pin = await scrapePinterest(url, { logger });
+    const isVideo = Boolean(pin.video);
+    const mediaUrl = pin.video || pin.image;
+
+    if (!mediaUrl) {
+      throw new AppError('DOWNLOAD_UNAVAILABLE', 'Media Pinterest tidak ditemukan.');
+    }
+
+    const workDir = fsImpl.mkdtempSync(path.join(tmpDir, TMP_PREFIX));
+    const title = pin.title || 'Pinterest';
+    const fallbackExt = isVideo ? 'mp4' : 'jpg';
+    const urlExt = /\.([a-z0-9]{2,4})$/i.exec(new URL(mediaUrl).pathname)?.[1]?.toLowerCase();
+    const ext = urlExt && MIME_BY_EXT[urlExt] ? urlExt : fallbackExt;
+
+    try {
+      const target = path.join(workDir, safeFileName(title, ext));
+      await fetchFile(mediaUrl, target, { maxBytes, timeoutMs });
+
+      const sizeBytes = fileSize(target);
+      if (sizeBytes === 0) {
+        throw new AppError('DOWNLOAD_FAILED', 'File Pinterest kosong atau tidak terbaca.');
+      }
+
+      if (sizeBytes > maxBytes) {
+        throw new AppError(
+          'DOWNLOAD_TOO_LARGE',
+          `File melebihi batas ${Math.round(maxBytes / (1024 * 1024))} MB.`,
+          undefined,
+          { max: Math.round(maxBytes / (1024 * 1024)) },
+        );
+      }
+
+      return {
+        filePath: target,
+        ext,
+        mimetype: MIME_BY_EXT[ext] || 'application/octet-stream',
+        sizeBytes,
+        thumbnail: null,
+        platform: 'pinterest',
+        kind: isVideo ? 'video' : 'image',
+        meta: {
+          title,
+          durationSec: pin.durationSec,
+          webpageUrl: url,
+        },
+        cleanup: () => {
+          try {
+            fsImpl.rmSync(workDir, { recursive: true, force: true });
+          } catch {
+            // Cleanup tidak boleh menutupi hasil pengiriman.
+          }
+        },
+      };
+    } catch (error) {
+      try {
+        fsImpl.rmSync(workDir, { recursive: true, force: true });
+      } catch {
+        // Cleanup tidak boleh menutupi error utama.
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Unduh video Facebook hasil scrape fbdownloader (tanpa yt-dlp).
+   *
+   * @param {{url: string}} options
+   * @returns {Promise<object>}
+   */
+  async function downloadFacebookMedia({ url }) {
+    ensureTmpDir();
+    pruneTmp();
+
+    const media = await scrapeFacebook(url, { logger });
+
+    const workDir = fsImpl.mkdtempSync(path.join(tmpDir, TMP_PREFIX));
+    const title = media.quality ? `Facebook ${media.quality}` : 'Facebook';
+
+    try {
+      const target = path.join(workDir, safeFileName(title, 'mp4'));
+      await fetchFile(media.url, target, { maxBytes, timeoutMs });
+
+      const sizeBytes = fileSize(target);
+      if (sizeBytes === 0) {
+        throw new AppError('DOWNLOAD_FAILED', 'File Facebook kosong atau tidak terbaca.');
+      }
+
+      if (sizeBytes > maxBytes) {
+        throw new AppError(
+          'DOWNLOAD_TOO_LARGE',
+          `File melebihi batas ${Math.round(maxBytes / (1024 * 1024))} MB.`,
+          undefined,
+          { max: Math.round(maxBytes / (1024 * 1024)) },
+        );
+      }
+
+      return {
+        filePath: target,
+        ext: 'mp4',
+        mimetype: MIME_BY_EXT.mp4,
+        sizeBytes,
+        thumbnail: null,
+        platform: 'facebook',
+        kind: 'video',
+        meta: {
+          title,
+          // shortcut: fbdownloader tidak mengirim durasi; upgrade ke API/sumber
+          // lain bila caption butuh durasi akurat.
+          durationSec: 0,
+          webpageUrl: url,
+        },
+        cleanup: () => {
+          try {
+            fsImpl.rmSync(workDir, { recursive: true, force: true });
+          } catch {
+            // Cleanup tidak boleh menutupi hasil pengiriman.
+          }
+        },
+      };
+    } catch (error) {
+      try {
+        fsImpl.rmSync(workDir, { recursive: true, force: true });
+      } catch {
+        // Cleanup tidak boleh menutupi error utama.
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Unduh media dan kembalikan path file (bukan buffer). Direktori temporary
+   * dibersihkan lewat `cleanup` setelah media selesai dikirim.
    *
    * Metadata sumber dikumpulkan lewat `--print before_dl:` dalam proses yt-dlp
    * yang **sama** dengan unduhan, jadi ekstraksi hanya sekali — lebih cepat
@@ -1260,10 +1968,11 @@ function createDownloaderService({
    * @param {object} options
    * @param {string} options.url
    * @param {'audio'|'video'} options.kind
-   * @param {'youtube'|'tiktok'} options.platform
+   * @param {'youtube'|'tiktok'|'instagram'|'facebook'|'x'|'threads'|'pinterest'|'spotify'|'soundcloud'} options.platform
+   * @param {number} [options.resolution] tinggi maksimum video (px)
    * @returns {Promise<object>}
    */
-  async function downloadMedia({ url, kind, platform }) {
+  async function downloadMedia({ url, kind, platform, resolution }) {
     ensureTmpDir();
     pruneTmp();
 
@@ -1306,21 +2015,25 @@ function createDownloaderService({
     if (kind === 'audio') {
       args.push('-x', '--audio-format', 'mp3', '--audio-quality', '5');
     } else {
-      // Prioritaskan format progresif (satu file, H.264+AAC) supaya cepat dan
-      // tidak butuh merge; batasi 720p agar ukuran kecil dan unduhan cepat.
-      // WhatsApp tidak bisa memutar AV1/VP9, jadi makeWhatsAppVideo akan
-      // transcode bila sumber hanya menyediakan codec lain.
-      const progressive = ffmpeg.available
-        ? 'b[ext=mp4][vcodec^=avc1][height<=720]'
-          + '/b[ext=mp4][height<=720]'
-          + '/bv*[vcodec^=avc1][height<=720][ext=mp4]+ba[acodec^=mp4a][ext=m4a]'
+      // Merge video+audio dulu: progresif hanya tersedia sampai 720p, jadi
+      // kalau progresif dicoba lebih dulu, permintaan 1080p/480p diam-diam
+      // turun resolusi. Batas height membuat yt-dlp tidak mengunduh lebih
+      // tinggi dari yang diminta. Tanpa FFmpeg hanya progresif yang bisa.
+      const height = resolution || DEFAULT_VIDEO_RESOLUTION;
+      const cap = `[height<=${height}]`;
+      const format = ffmpeg.available
+        ? `bv*[vcodec^=avc1]${cap}[ext=mp4]+ba[acodec^=mp4a][ext=m4a]`
+          + `/bv*${cap}[ext=mp4]+ba[ext=m4a]`
+          + `/b[ext=mp4][vcodec^=avc1]${cap}`
+          + `/b[ext=mp4]${cap}`
           + '/b[ext=mp4]/b'
-        : 'b[ext=mp4][vcodec^=avc1][height<=720]'
+        : `b[ext=mp4][vcodec^=avc1]${cap}`
+          + `/b[ext=mp4]${cap}`
           + '/b[ext=mp4]/b';
 
       args.push(
-        '-f', progressive,
-        '-S', 'res:720',
+        '-f', format,
+        '-S', `res:${height},ext:mp4:m4a`,
         '--merge-output-format', 'mp4',
       );
     }
@@ -1337,6 +2050,8 @@ function createDownloaderService({
       }
       return false;
     };
+
+    let keepWorkDir = false;
 
     try {
       const result = await runCommand(resolveBinary(), args, { timeoutMs, onStdout });
@@ -1390,19 +2105,23 @@ function createDownloaderService({
       let output = pickOutputFile(
         workDir,
         kind === 'audio' ? ['mp3'] : ['mp4'],
+        maxBytes,
       );
 
       if (!output) {
         throw new AppError('DOWNLOAD_FAILED', 'File hasil unduhan tidak ditemukan.');
       }
 
+      let thumbnail = null;
+
       if (kind === 'video') {
         const compatible = await makeWhatsAppVideo(output.path, workDir, {
           expectedDuration: meta.durationSec,
           expectedAudio: meta.hasAudio,
         });
-        if (compatible !== output.path) {
-          output = { path: compatible, ext: 'mp4', size: fileSize(compatible) };
+        thumbnail = compatible.thumbnail;
+        if (compatible.file !== output.path) {
+          output = { path: compatible.file, ext: 'mp4', size: fileSize(compatible.file) };
         }
       }
 
@@ -1419,22 +2138,36 @@ function createDownloaderService({
         );
       }
 
-      const buffer = fsImpl.readFileSync(output.path);
+      // Jangan baca file ke buffer RAM: Baileys akan mengalirkan file dari path.
+      // Direktori kerja dipertahankan sampai command selesai mengirim media,
+      // lalu dibersihkan lewat `cleanup` agar file tidak menumpuk.
+      keepWorkDir = true;
+      const sizeBytes = fileSize(output.path);
 
       return {
-        buffer,
+        filePath: output.path,
         ext: output.ext,
         mimetype: MIME_BY_EXT[output.ext] || 'application/octet-stream',
-        sizeBytes: buffer.length,
+        sizeBytes,
+        thumbnail,
         platform,
         kind,
         meta,
+        cleanup: () => {
+          try {
+            fsImpl.rmSync(workDir, { recursive: true, force: true });
+          } catch {
+            // Cleanup tidak boleh menutupi hasil pengiriman.
+          }
+        },
       };
     } finally {
-      try {
-        fsImpl.rmSync(workDir, { recursive: true, force: true });
-      } catch {
-        // Cleanup tidak boleh menutupi error utama.
+      if (!keepWorkDir) {
+        try {
+          fsImpl.rmSync(workDir, { recursive: true, force: true });
+        } catch {
+          // Cleanup tidak boleh menutupi error utama.
+        }
       }
     }
   }
@@ -1445,22 +2178,42 @@ function createDownloaderService({
    * @param {object} options
    * @param {string} options.rawUrl
    * @param {'audio'|'video'} options.kind
-   * @param {'youtube'|'tiktok'} options.platform
+   * @param {'youtube'|'tiktok'|'instagram'|'facebook'|'x'|'threads'|'pinterest'|'spotify'|'soundcloud'} options.platform
+   * @param {string|number} [options.resolution] pilihan resolusi (mis. "1080p")
    * @returns {Promise<object>}
    */
-  async function fetch({ rawUrl, kind, platform }) {
+  async function fetch({ rawUrl, kind, platform, resolution }) {
     const { url } = validateMediaUrl(rawUrl, platform);
+    const videoResolution = kind === 'video' ? parseResolution(resolution) : undefined;
 
     return limiter.run(async () => {
-      const status = await available();
-      if (!status.available) {
-        throw new AppError(
-          'DOWNLOAD_NOT_READY',
-          'yt-dlp belum tersedia sehingga media tidak bisa diunduh.',
-        );
-      }
+      let media;
 
-      const media = await downloadMedia({ url, kind, platform });
+      // Spotify memakai spotidown (MP3 langsung), Pinterest memakai scrape
+      // halaman pin, dan Facebook memakai fbdownloader, jadi ketiganya tidak
+      // butuh yt-dlp/FFmpeg.
+      if (platform === 'spotify') {
+        media = await downloadSpotifyTrack({ url });
+      } else if (platform === 'pinterest') {
+        media = await downloadPinterestMedia({ url });
+      } else if (platform === 'facebook') {
+        media = await downloadFacebookMedia({ url });
+      } else {
+        const status = await available();
+        if (!status.available) {
+          throw new AppError(
+            'DOWNLOAD_NOT_READY',
+            'yt-dlp belum tersedia sehingga media tidak bisa diunduh.',
+          );
+        }
+
+        media = await downloadMedia({
+          url,
+          kind,
+          platform,
+          resolution: videoResolution,
+        });
+      }
       const meta = media.meta;
 
       const title = meta.title || 'media';
@@ -1484,6 +2237,7 @@ function createDownloaderService({
         durationSec: meta.durationSec,
         fileName,
         webpageUrl: meta.webpageUrl || url,
+        resolution: videoResolution,
       };
     });
   }
@@ -1514,7 +2268,9 @@ module.exports = {
   MIME_BY_EXT,
   AVAILABLE_TTL_MS,
   AVAILABLE_FAILURE_TTL_MS,
+  DEFAULT_VIDEO_RESOLUTION,
   TMP_PREFIX,
+  VIDEO_RESOLUTIONS,
   classifyFailure,
   createLimiter,
   createDownloaderService,
@@ -1525,8 +2281,12 @@ module.exports = {
   installYtDlpRelease,
   isPrivateHost,
   parseMetaOutput,
+  parseResolution,
   releaseAssetName,
   resolveBinaryPath,
+  scrapeFacebook,
+  scrapePinterest,
+  scrapeSpotify,
   runProcess,
   safeFileName,
   sanitizeProcessError,

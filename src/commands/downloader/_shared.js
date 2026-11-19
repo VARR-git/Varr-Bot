@@ -7,7 +7,7 @@
 
 const { AppError } = require('../../core/errors');
 const { formatBytes } = require('../../utils/format');
-const { formatClock } = require('../../services/downloader');
+const { formatClock, parseResolution } = require('../../services/downloader');
 const { truncate } = require('../../utils/text');
 
 const URL_PATTERN = /^https?:\/\//i;
@@ -51,6 +51,8 @@ function describeError(ctx, error, platformLabel) {
       return ctx.t('downloader.unavailableMedia');
     case 'DOWNLOAD_FORMAT':
       return ctx.t('downloader.formatUnavailable');
+    case 'DOWNLOAD_INVALID_RESOLUTION':
+      return ctx.t('downloader.invalidResolution');
     case 'DOWNLOAD_TIMEOUT':
       return ctx.t('downloader.timeout');
     case 'DOWNLOAD_UNSUPPORTED_MEDIA':
@@ -64,10 +66,10 @@ function describeError(ctx, error, platformLabel) {
  * Jalankan command downloader.
  *
  * @param {object} ctx
- * @param {{platform: 'youtube'|'tiktok', kind: 'audio'|'video', platformLabel: string}} options
+ * @param {{platform: 'youtube'|'tiktok', kind: 'audio'|'video', platformLabel: string, supportsResolution?: boolean}} options
  * @returns {Promise<string|null>}
  */
-async function executeDownload(ctx, { platform, kind, platformLabel }) {
+async function executeDownload(ctx, { platform, kind, platformLabel, supportsResolution = false }) {
   const downloader = ctx.services?.downloader;
 
   if (!downloader) {
@@ -80,16 +82,32 @@ async function executeDownload(ctx, { platform, kind, platformLabel }) {
     return ctx.t('downloader.invalidUrl', { prefix: ctx.prefix, command: ctx.command.name });
   }
 
-  const status = await downloader.available();
-  if (!status.available) {
-    return ctx.t('downloader.unavailable', { prefix: ctx.prefix });
+  // Opsi resolusi hanya untuk command video yang mendukungnya. Argumen selain
+  // URL dianggap pilihan resolusi; nilai di luar daftar langsung ditolak.
+  let resolution;
+  if (kind === 'video' && supportsResolution) {
+    const requested = (ctx.args || []).find((arg) => !URL_PATTERN.test(arg));
+    try {
+      resolution = parseResolution(requested);
+    } catch {
+      return ctx.t('downloader.invalidResolution');
+    }
+  }
+
+  // Spotify, Pinterest, dan Facebook memakai sumber sendiri, tidak bergantung
+  // pada yt-dlp.
+  if (platform !== 'spotify' && platform !== 'pinterest' && platform !== 'facebook') {
+    const status = await downloader.available();
+    if (!status.available) {
+      return ctx.t('downloader.unavailable', { prefix: ctx.prefix });
+    }
   }
 
   await ctx.react('⏳');
 
   let result;
   try {
-    result = await downloader.fetch({ rawUrl, kind, platform });
+    result = await downloader.fetch({ rawUrl, kind, platform, resolution });
   } catch (error) {
     ctx.logger?.warn?.(
       {
@@ -98,6 +116,8 @@ async function executeDownload(ctx, { platform, kind, platformLabel }) {
         kind,
         // Jangan log URL penuh: itu isi pesan pengguna.
         host: error?.meta?.host || undefined,
+        // Pesan error sudah disanitasi (URL disensor) dan dipotong 300 char.
+        reason: error?.message || undefined,
       },
       'Download media gagal',
     );
@@ -105,42 +125,64 @@ async function executeDownload(ctx, { platform, kind, platformLabel }) {
     return describeError(ctx, error, platformLabel);
   }
 
-  const caption = kind === 'audio'
-    ? ctx.t('downloader.audioCaption', {
-      title: truncate(result.title, 90),
-      duration: formatClock(result.durationSec),
-      size: formatBytes(result.sizeBytes),
-    })
-    : platform === 'tiktok'
-      ? ctx.t('downloader.tiktokCaption', {
-        title: truncate(result.title, 90),
-        author: truncate(result.author || ctx.t('downloader.authorUnknown'), 40),
-      })
-      : ctx.t('downloader.videoCaption', {
+  try {
+    const actualKind = result.kind || kind;
+    const caption = actualKind === 'audio'
+      ? ctx.t('downloader.audioCaption', {
         title: truncate(result.title, 90),
         duration: formatClock(result.durationSec),
         size: formatBytes(result.sizeBytes),
-      });
+      })
+      : platform === 'tiktok'
+        ? ctx.t('downloader.tiktokCaption', {
+          title: truncate(result.title, 90),
+          author: truncate(result.author || ctx.t('downloader.authorUnknown'), 40),
+        })
+        : ctx.t('downloader.videoCaption', {
+          title: truncate(result.title, 90),
+          duration: formatClock(result.durationSec),
+          size: formatBytes(result.sizeBytes),
+        });
 
-  await ctx.react('✅');
+    await ctx.react('✅');
 
-  if (kind === 'audio') {
+    // Pinterest bisa mengembalikan gambar, bukan hanya video.
+    if (actualKind === 'image') {
+      await ctx.send({
+        image: { url: result.filePath },
+        mimetype: result.mimetype,
+        fileName: result.fileName,
+        ...(result.title ? { caption: truncate(result.title, 90) } : {}),
+      }, { quoted: false });
+      return null;
+    }
+
+    // Kirim lewat path agar Baileys mengalirkan file, bukan menyalin seluruh
+    // isi media ke RAM dengan fs.readFileSync. Durasi + thumbnail ikut dikirim
+    // supaya Baileys tidak menyalin file utuh lagi hanya untuk menghitungnya.
+    if (actualKind === 'audio') {
+      await ctx.send({
+        audio: { url: result.filePath },
+        mimetype: result.mimetype,
+        fileName: result.fileName,
+        seconds: Math.round(result.durationSec) || undefined,
+        ptt: false,
+      }, { quoted: false });
+      await ctx.reply(caption);
+      return null;
+    }
+
     await ctx.send({
-      audio: result.buffer,
+      video: { url: result.filePath },
       mimetype: result.mimetype,
       fileName: result.fileName,
-      ptt: false,
+      caption,
+      ...(result.thumbnail ? { jpegThumbnail: result.thumbnail } : {}),
     }, { quoted: false });
-    await ctx.reply(caption);
-    return null;
+  } finally {
+    // File temporary hanya boleh dihapus setelah pengiriman selesai.
+    result.cleanup?.();
   }
-
-  await ctx.send({
-    video: result.buffer,
-    mimetype: result.mimetype,
-    fileName: result.fileName,
-    caption,
-  }, { quoted: false });
 
   return null;
 }

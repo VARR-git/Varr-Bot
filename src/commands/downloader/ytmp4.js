@@ -1,5 +1,5 @@
 /**
- * `.ytmp4 <url>` — unduh video YouTube sebagai MP4.
+ * `.ytmp4 <url> [resolusi]` — unduh video YouTube sebagai MP4.
  */
 
 const { executeDownload } = require('./_shared');
@@ -10,8 +10,12 @@ module.exports = {
   category: 'downloader',
   description: 'Unduh video YouTube (MP4)',
   descriptionKey: 'commands.ytmp4.description',
-  usage: 'ytmp4 <url youtube>',
-  examples: ['ytmp4 https://youtu.be/xxxxxxxxxxx', 'ytmp4 https://www.youtube.com/watch?v=xxxxxxxxxxx'],
+  usage: 'ytmp4 <url youtube> [resolusi]',
+  examples: [
+    'ytmp4 https://youtu.be/xxxxxxxxxxx',
+    'ytmp4 https://www.youtube.com/watch?v=xxxxxxxxxxx 1080p',
+    'ytmp4 https://youtu.be/xxxxxxxxxxx 480p',
+  ],
   permission: 'user',
   scope: 'all',
   cooldown: 20,
@@ -22,6 +26,7 @@ module.exports = {
       platform: 'youtube',
       platformLabel: 'YouTube',
       kind: 'video',
+      supportsResolution: true,
     });
   },
 };

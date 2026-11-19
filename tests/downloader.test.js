@@ -20,6 +20,7 @@ const {
   installYtDlpRelease,
   isPrivateHost,
   parseMetaOutput,
+  parseResolution,
   releaseAssetName,
   resolveBinaryPath,
   runProcess,
@@ -63,6 +64,7 @@ function createFakeRunner({
   probeDuration = duration,
   audio = true,
   sourceAudio = audio,
+  leftovers = false,
 } = {}) {
   const calls = [];
 
@@ -118,9 +120,21 @@ function createFakeRunner({
       return { code: 0, stdout: '', stderr: '', error: null };
     }
 
+    if (args.includes('-frames:v')) {
+      fs.writeFileSync(args[args.length - 1], Buffer.alloc(64, 0xff));
+      return { code: 0, stdout: '', stderr: '', error: null };
+    }
+
     const template = args[args.indexOf('-o') + 1];
-    const ext = args.includes('-x') ? 'mp3' : 'mp4';
-    fs.writeFileSync(template.replace('%(ext)s', ext), Buffer.alloc(writeBytes, 1));
+    if (leftovers) {
+      // Tiru yt-dlp: merge dilewati karena total melebihi --max-filesize,
+      // stream video/audio dibiarkan terpisah.
+      fs.writeFileSync(template.replace('%(ext)s', 'f137.mp4'), Buffer.alloc(writeBytes, 1));
+      fs.writeFileSync(template.replace('%(ext)s', 'f140.m4a'), Buffer.alloc(writeBytes, 1));
+    } else {
+      const ext = args.includes('-x') ? 'mp3' : 'mp4';
+      fs.writeFileSync(template.replace('%(ext)s', ext), Buffer.alloc(writeBytes, 1));
+    }
 
     const stdout = [
       'VARR:title:Video Uji',
@@ -236,15 +250,17 @@ test('downloader: fetch audio mengunduh mp3 dan membersihkan temporary', async (
 
   assert.equal(result.mimetype, 'audio/mpeg');
   assert.equal(result.ext, 'mp3');
-  assert.equal(result.buffer.length, 2_000);
+  assert.equal(fs.statSync(result.filePath).size, 2_000);
   assert.equal(result.fileName, 'Video_Uji.mp3');
   assert.equal(result.title, 'Video Uji');
   assert.equal(result.durationSec, 30);
+  assert.equal('buffer' in result, false, 'hasil tidak boleh membawa buffer RAM penuh');
 
   const downloadCall = runner.calls.find((call) => call.args.includes('-x'));
   assert.ok(downloadCall, 'harus memanggil yt-dlp dengan mode audio');
   assert.ok(downloadCall.args.includes('--max-filesize'));
 
+  result.cleanup();
   assert.deepEqual(fs.readdirSync(service.tmpDir), [], 'file temporary harus dibersihkan');
 });
 
@@ -269,6 +285,8 @@ test('downloader: fetch video mengunduh mp4', async (t) => {
   assert.equal(result.ext, 'mp4');
   assert.equal(result.title, 'Video Uji');
   assert.equal(result.author, 'Kreator Uji');
+  assert.ok(fs.statSync(result.filePath).size > 0);
+  result.cleanup();
   assert.deepEqual(fs.readdirSync(service.tmpDir), []);
 });
 
@@ -283,17 +301,70 @@ test('downloader: ytmp4 memilih H.264/AAC agar kompatibel WhatsApp', async (t) =
     runCommand: runner.run,
   });
 
-  await service.fetch({
+  const result = await service.fetch({
     rawUrl: 'https://www.youtube.com/watch?v=abc',
     kind: 'video',
     platform: 'youtube',
   });
+  result.cleanup();
 
   const downloadCall = runner.calls.find((call) => call.args.includes('--merge-output-format'));
   const format = downloadCall.args[downloadCall.args.indexOf('-f') + 1];
 
+  assert.match(format, /^bv\*\[vcodec\^=avc1\]\[height<=720\]/, 'merge harus dicoba dulu');
   assert.match(format, /vcodec\^=avc1/);
   assert.match(format, /acodec\^=mp4a/);
+  assert.match(format, /\[height<=720\]/, 'default resolusi harus 720p');
+});
+
+test('downloader: parseResolution menerima daftar resolusi dan menolak nilai lain', () => {
+  for (const value of ['1080p', '720p', '480p', '360p', '240p', '144p']) {
+    assert.equal(parseResolution(value), Number.parseInt(value, 10));
+  }
+
+  assert.equal(parseResolution('1080P'), 1080, 'harus case-insensitive');
+  assert.equal(parseResolution(720), 720, 'angka hasil parse sebelumnya harus diterima');
+  assert.equal(parseResolution(undefined), 720, 'default 720p');
+  assert.equal(parseResolution(''), 720);
+
+  for (const value of ['999p', '720', '4k', 'p1080']) {
+    assert.throws(
+      () => parseResolution(value),
+      (error) => error.code === 'DOWNLOAD_INVALID_RESOLUTION'
+        && error.message === 'Format resolusi tidak sesuai',
+    );
+  }
+});
+
+test('downloader: resolusi pilihan diteruskan sebagai batas height yt-dlp', async (t) => {
+  const dir = tempDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const runner = createFakeRunner();
+  const service = createDownloaderService({
+    config: makeConfig(dir),
+    logger: silentLogger,
+    runCommand: runner.run,
+  });
+
+  const result = await service.fetch({
+    rawUrl: 'https://www.youtube.com/watch?v=abc',
+    kind: 'video',
+    platform: 'youtube',
+    resolution: '480p',
+  });
+  result.cleanup();
+
+  const downloadCall = runner.calls.find((call) => call.args.includes('--merge-output-format'));
+  const format = downloadCall.args[downloadCall.args.indexOf('-f') + 1];
+  const sort = downloadCall.args[downloadCall.args.indexOf('-S') + 1];
+
+  assert.match(format, /^bv\*\[vcodec\^=avc1\]\[height<=480\]/, 'merge harus dicoba dulu');
+  assert.match(format, /\[height<=480\]/);
+  assert.match(format, /\[ext=mp4\]/);
+  assert.match(format, /vcodec\^=avc1/);
+  assert.match(sort, /^res:480/);
+  assert.equal(result.resolution, 480);
 });
 
 test('downloader: video H.264 di-remux faststart tanpa transcode', async (t) => {
@@ -307,11 +378,12 @@ test('downloader: video H.264 di-remux faststart tanpa transcode', async (t) => 
     runCommand: runner.run,
   });
 
-  await service.fetch({
+  const result = await service.fetch({
     rawUrl: 'https://www.youtube.com/watch?v=abc',
     kind: 'video',
     platform: 'youtube',
   });
+  result.cleanup();
 
   const ffmpegCall = runner.calls.find((call) => call.args.includes('-movflags'));
   assert.ok(ffmpegCall.args.includes('copy'));
@@ -344,6 +416,7 @@ test('downloader: video AV1 ditranscode ke H.264/AAC untuk WhatsApp', async (t) 
   assert.ok(ffmpegCall.args.includes('yuv420p'));
   assert.equal(ffmpegCall.args.includes('copy'), false);
   assert.ok(ffmpegCall.args.includes('+faststart'));
+  result.cleanup();
   assert.deepEqual(fs.readdirSync(service.tmpDir), []);
 });
 
@@ -361,6 +434,24 @@ test('downloader: video tanpa audio ditolak bila sumber punya audio', async (t) 
   await assert.rejects(
     () => service.fetch({ rawUrl: 'https://youtu.be/abc', kind: 'video', platform: 'youtube' }),
     (error) => error.code === 'DOWNLOAD_FAILED' && /audio/i.test(error.message),
+  );
+
+  assert.deepEqual(fs.readdirSync(service.tmpDir), []);
+});
+
+test('downloader: hasil merge yang dilewati dilaporkan kelebihan ukuran', async (t) => {
+  const dir = tempDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const service = createDownloaderService({
+    config: makeConfig(dir),
+    logger: silentLogger,
+    runCommand: createFakeRunner({ leftovers: true }).run,
+  });
+
+  await assert.rejects(
+    () => service.fetch({ rawUrl: 'https://youtu.be/abc', kind: 'video', platform: 'youtube' }),
+    (error) => error.code === 'DOWNLOAD_TOO_LARGE' && error.meta?.max === 1,
   );
 
   assert.deepEqual(fs.readdirSync(service.tmpDir), []);
@@ -500,7 +591,7 @@ test('downloader: command ytmp3 mengirim audio dan caption', async (t) => {
     available: async () => ({ available: true, version: 'test' }),
     async fetch({ kind }) {
       return {
-        buffer: Buffer.from('media-bytes'),
+        filePath: `uji.${kind === 'audio' ? 'mp3' : 'mp4'}`,
         ext: kind === 'audio' ? 'mp3' : 'mp4',
         mimetype: kind === 'audio' ? 'audio/mpeg' : 'video/mp4',
         sizeBytes: 11,
@@ -509,6 +600,7 @@ test('downloader: command ytmp3 mengirim audio dan caption', async (t) => {
         durationSec: 42,
         fileName: `uji.${kind === 'audio' ? 'mp3' : 'mp4'}`,
         platform: 'youtube',
+        cleanup() {},
       };
     },
   };
@@ -521,9 +613,11 @@ test('downloader: command ytmp3 mengirim audio dan caption', async (t) => {
     makeMessage({ chatId: GROUP, sender: MEMBER, text: '.ytmp3 https://youtu.be/abc' }),
   );
 
-  const audio = bot.sent.find((entry) => Buffer.isBuffer(entry.payload?.audio));
+  const audio = bot.sent.find((entry) => entry.payload?.audio?.url);
   assert.ok(audio, 'audio harus terkirim');
+  assert.equal(audio.payload.audio.url, 'uji.mp3', 'audio harus dikirim lewat path');
   assert.equal(audio.payload.mimetype, 'audio/mpeg');
+  assert.equal(audio.payload.seconds, 42, 'durasi dikirim agar Baileys tidak menyalin file ulang');
   assert.match(lastText(bot), /Judul Uji/);
   assert.match(lastText(bot), /0:42/);
 });
@@ -533,7 +627,7 @@ test('downloader: command tiktok mengirim video dengan caption', async (t) => {
     available: async () => ({ available: true, version: 'test' }),
     async fetch() {
       return {
-        buffer: Buffer.from('video-bytes'),
+        filePath: 'uji.mp4',
         ext: 'mp4',
         mimetype: 'video/mp4',
         sizeBytes: 11,
@@ -541,7 +635,9 @@ test('downloader: command tiktok mengirim video dengan caption', async (t) => {
         author: 'Kreator Uji',
         durationSec: 15,
         fileName: 'uji.mp4',
+        thumbnail: 'QUJD',
         platform: 'tiktok',
+        cleanup() {},
       };
     },
   };
@@ -554,10 +650,141 @@ test('downloader: command tiktok mengirim video dengan caption', async (t) => {
     makeMessage({ chatId: GROUP, sender: MEMBER, text: '.tiktok https://vt.tiktok.com/abc/' }),
   );
 
-  const video = bot.sent.find((entry) => Buffer.isBuffer(entry.payload?.video));
+  const video = bot.sent.find((entry) => entry.payload?.video?.url);
   assert.ok(video, 'video harus terkirim');
+  assert.equal(video.payload.video.url, 'uji.mp4', 'video harus dikirim lewat path');
+  assert.equal(video.payload.jpegThumbnail, 'QUJD', 'thumbnail dikirim agar Baileys tidak menyalin video ulang');
   assert.match(video.payload.caption, /TikTok Uji/);
   assert.match(video.payload.caption, /Kreator Uji/);
+});
+
+test('downloader: file temporary tetap dibersihkan saat pengiriman gagal', async (t) => {
+  let cleaned = 0;
+  const stub = {
+    available: async () => ({ available: true, version: 'test' }),
+    async fetch() {
+      return {
+        filePath: 'uji.mp4',
+        ext: 'mp4',
+        mimetype: 'video/mp4',
+        sizeBytes: 11,
+        title: 'Video Uji',
+        author: 'Kreator Uji',
+        durationSec: 42,
+        fileName: 'uji.mp4',
+        platform: 'youtube',
+        cleanup() {
+          cleaned += 1;
+        },
+      };
+    },
+  };
+
+  const bot = createTestBot({ downloader: stub });
+  t.after(() => bot.close());
+
+  bot.sock.sendMessage = async () => {
+    throw new Error('pengiriman gagal');
+  };
+
+  await bot.handler.handleMessage(
+    bot.sock,
+    makeMessage({ chatId: GROUP, sender: MEMBER, text: '.ytmp4 https://youtu.be/abc' }),
+  );
+
+  assert.equal(cleaned, 1, 'cleanup harus tetap jalan saat pengiriman gagal');
+});
+
+test('downloader: command ytmp4 dengan 720p memakai service asli', async (t) => {
+  const dir = tempDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const service = createDownloaderService({
+    config: makeConfig(dir),
+    logger: silentLogger,
+    runCommand: createFakeRunner().run,
+  });
+
+  const bot = createTestBot({ downloader: service });
+  t.after(() => bot.close());
+
+  await bot.handler.handleMessage(
+    bot.sock,
+    makeMessage({ chatId: GROUP, sender: MEMBER, text: '.ytmp4 https://youtu.be/abc 720p' }),
+  );
+
+  const video = bot.sent.find((entry) => entry.payload?.video?.url);
+  assert.ok(video, 'video harus terkirim, bukan error resolusi');
+  assert.ok(video.payload.jpegThumbnail?.length > 0, 'thumbnail harus ikut terkirim');
+  assert.equal(lastText(bot), '', 'tidak boleh ada pesan error');
+  assert.deepEqual(fs.readdirSync(service.tmpDir), [], 'file temporary harus dibersihkan');
+});
+
+test('downloader: command ytmp4 menolak resolusi di luar daftar', async (t) => {
+  let fetchCalls = 0;
+  const stub = {
+    available: async () => ({ available: true, version: 'test' }),
+    async fetch() {
+      fetchCalls += 1;
+      return {};
+    },
+  };
+
+  const bot = createTestBot({ downloader: stub });
+  t.after(() => bot.close());
+
+  await bot.handler.handleMessage(
+    bot.sock,
+    makeMessage({ chatId: GROUP, sender: MEMBER, text: '.ytmp4 https://youtu.be/abc 999p' }),
+  );
+
+  assert.equal(lastText(bot), 'Format resolusi tidak sesuai');
+  assert.equal(fetchCalls, 0, 'unduhan tidak boleh dimulai saat resolusi tidak valid');
+});
+
+test('downloader: command ytmp4 meneruskan resolusi valid (case-insensitive)', async (t) => {
+  const received = [];
+  const stub = {
+    available: async () => ({ available: true, version: 'test' }),
+    async fetch(options) {
+      received.push(options);
+      return {
+        filePath: 'uji.mp4',
+        ext: 'mp4',
+        mimetype: 'video/mp4',
+        sizeBytes: 11,
+        title: 'Video Uji',
+        author: 'Kreator Uji',
+        durationSec: 42,
+        fileName: 'uji.mp4',
+        platform: 'youtube',
+        cleanup() {},
+      };
+    },
+  };
+
+  const bot = createTestBot({ downloader: stub });
+  t.after(() => bot.close());
+
+  await bot.handler.handleMessage(
+    bot.sock,
+    makeMessage({ chatId: GROUP, sender: MEMBER, text: '.ytmp4 https://youtu.be/abc 1080P' }),
+  );
+
+  assert.equal(received.length, 1);
+  assert.equal(received[0].resolution, 1080);
+
+  const video = bot.sent.find((entry) => entry.payload?.video?.url);
+  assert.ok(video, 'video harus terkirim');
+  assert.equal(video.payload.video.url, 'uji.mp4');
+
+  await bot.handler.handleMessage(
+    bot.sock,
+    makeMessage({ chatId: GROUP, sender: MEMBER, text: '.ytmp4 https://youtu.be/def' }),
+  );
+
+  assert.equal(received.length, 2);
+  assert.equal(received[1].resolution, 720, 'tanpa argumen resolusi memakai default 720p');
 });
 
 test('downloader: command memberi pesan jelas saat yt-dlp tidak ada', async (t) => {

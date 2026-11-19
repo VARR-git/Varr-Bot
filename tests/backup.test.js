@@ -42,7 +42,7 @@ test('backup: membuat backup terverifikasi dan mendaftarnya', async (t) => {
   assert.ok(fs.existsSync(result.path));
   assert.ok(result.sizeBytes > 0);
   assert.equal(result.verification.ok, true);
-  assert.equal(result.verification.schemaVersion, 2);
+  assert.equal(result.verification.schemaVersion, 3);
   assert.equal(result.verification.counts.users, 1);
   assert.equal(result.verification.counts.groups, 1);
   assert.equal(result.verification.counts.warnings, 1);
@@ -167,7 +167,7 @@ test('backup: command owner membuat, mendaftar, dan memverifikasi backup', async
     makeMessage({ chatId: OWNER, text: '.backup verify latest' }),
   );
   assert.match(lastText(bot), /Integritas: \*OK\*/);
-  assert.match(lastText(bot), /Skema: v2/);
+  assert.match(lastText(bot), /Skema: v3/);
 
   await bot.handler.handleMessage(
     bot.sock,

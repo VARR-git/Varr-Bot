@@ -178,6 +178,39 @@
     },
     "readqr": {
       "description": "Read the contents of a QR Code image"
+    },
+    "ig": {
+      "description": "Download Instagram Reels/Posts/Videos"
+    },
+    "fb": {
+      "description": "Download Facebook Videos/Reels"
+    },
+    "x": {
+      "description": "Download X (Twitter) videos"
+    },
+    "threads": {
+      "description": "Download Threads videos/media"
+    },
+    "pinterest": {
+      "description": "Download Pinterest videos/images"
+    },
+    "spotify": {
+      "description": "Download Spotify audio (MP3)"
+    },
+    "soundcloud": {
+      "description": "Download SoundCloud audio (MP3)"
+    },
+    "daily": {
+      "description": "Claim the daily coin and XP reward"
+    },
+    "balance": {
+      "description": "Check coins, XP, and level"
+    },
+    "level": {
+      "description": "Show level, XP progress, and rank"
+    },
+    "leaderboard": {
+      "description": "Show the top 10 users by coins or level"
     }
   },
   "ai": {
@@ -403,6 +436,7 @@
     "ageRestricted": "This video is age-restricted and cannot be downloaded without cookies.",
     "unavailableMedia": "The media is unavailable. It may be private, removed, or region-locked.",
     "formatUnavailable": "The requested media format is unavailable. Try again or use another link.",
+    "invalidResolution": "Invalid resolution format",
     "timeout": "The download timed out. Try a shorter video or retry later.",
     "unsupportedMedia": "This content is not supported audio/video (for example a TikTok photo slideshow).",
     "processing": "⏳ Processing media...",
@@ -493,6 +527,32 @@
     "tmpOk": "{count} files ({size})",
     "uptime": "Uptime",
     "memory": "Memory"
+  },
+  "economy": {
+    "daily": {
+      "claimed": "🎁 Daily claim successful! +{coins} coins, +{xp} XP.",
+      "wait": "⏳ Daily reward already claimed. Try again in *{time}*."
+    },
+    "balance": {
+      "title": "💰 *{user}'s balance*",
+      "line": "Coins: *{balance}*\nXP: *{xp}*\nLevel: *{level}*"
+    },
+    "level": {
+      "title": "📊 *{user}'s level*",
+      "current": "Level: *{level}*",
+      "progress": "{bar} {percent}%\nXP: {current}/{needed}",
+      "total": "Total XP: *{xp}*",
+      "rank": "Rank: *#{rank}*"
+    },
+    "leaderboard": {
+      "titleBalance": "🏆 *Top 10 Coins*",
+      "titleLevel": "🏆 *Top 10 Levels*",
+      "empty": "No leaderboard data yet.",
+      "item": "{rank}. {user} — {value}",
+      "balanceValue": "{balance} coins",
+      "levelValue": "Lv {level} ({xp} XP)"
+    },
+    "levelUp": "🎉 Level up to *{level}*!"
   },
   "groupEvents": {
     "welcomeDefault": "👋 Welcome {mention} to *{group}*!",

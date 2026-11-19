@@ -8,6 +8,7 @@
  *   getSetting, setSetting, deleteSetting
  *   getUser, ensureUser, setPremium, isPremium, setUserBanned, isUserBanned,
  *   incrementUserCommands
+ *   addBalance, addXp, claimDaily, grantPassiveXp, getLeaderboard, getRank
  *   getGroup, ensureGroup, setGroupBanned, isGroupBanned, incrementGroupCommands
  *   getGroupSetting, setGroupSetting, deleteGroupSetting
  *   addWarning, getWarnings, countWarnings, clearWarnings

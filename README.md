@@ -101,10 +101,10 @@ Admin grup dan owner selalu dikecualikan dari guard. Eskalasi: warning → kelua
 | `.sticker` | Gambar/GIF → sticker WebP |
 | `.toimg` | Sticker → gambar PNG |
 | `.ytmp3 <url>` | Audio YouTube → MP3 |
-| `.ytmp4 <url>` | Video YouTube → MP4 |
+| `.ytmp4 <url> [resolusi]` | Video YouTube → MP4 (144p–1080p, default 720p) |
 | `.tiktok <url>` | Video TikTok tanpa watermark |
 
-Downloader memakai **yt-dlp** + **FFmpeg**. Metadata dan media diambil dalam **satu** proses yt-dlp (`--print before_dl:`), jadi tidak ada panggilan probe terpisah — unduhan lebih cepat. Batas ukuran, durasi, timeout, jumlah unduhan paralel, dan antrean bisa diatur lewat `.env`. Command downloader punya timeout internal sendiri, jadi tidak terpotong `COMMAND_TIMEOUT_MS` yang lebih pendek. Video diprioritaskan ke **format progresif H.264 ≤720p** (satu file, tanpa merge) supaya cepat dan tidak terpotong; hasilnya diverifikasi dengan ffprobe (durasi harus sesuai sumber dan audio tidak boleh hilang) lalu dinormalisasi ke **H.264 + AAC** dengan `faststart` supaya bisa diputar di WhatsApp; AV1/VP9/HEVC otomatis ditranscode bila perlu.
+Downloader memakai **yt-dlp** + **FFmpeg**. Metadata dan media diambil dalam **satu** proses yt-dlp (`--print before_dl:`), jadi tidak ada panggilan probe terpisah — unduhan lebih cepat. Batas ukuran, durasi, timeout, jumlah unduhan paralel, dan antrean bisa diatur lewat `.env`. Command downloader punya timeout internal sendiri, jadi tidak terpotong `COMMAND_TIMEOUT_MS` yang lebih pendek. `.ytmp4` menerima resolusi (`144p`–`1080p`, default `720p`); di atas 720p yt-dlp menggabungkan video+audio karena YouTube tidak menyediakan MP4 progresif. Ukuran hasil tetap dibatasi `DOWNLOAD_MAX_MB`, jadi 1080p biasanya butuh nilai lebih tinggi (mis. 64). Hasilnya diverifikasi dengan ffprobe (durasi harus sesuai sumber dan audio tidak boleh hilang) lalu dinormalisasi ke **H.264 + AAC** dengan `faststart` supaya bisa diputar di WhatsApp; AV1/VP9/HEVC otomatis ditranscode bila perlu.
 
 Urutan pencarian binary: `BIN_DIR` → `PATH` (atau path absolut di `YTDLP_PATH`). Jika `YTDLP_AUTO_INSTALL=true` dan yt-dlp belum ada, bot memasangnya sekali dari rilis resmi GitHub dengan verifikasi checksum SHA-256; fitur ini nonaktif secara default. `FFMPEG_PATH` bisa diisi path absolut bila FFmpeg tidak ada di `PATH`. Untuk video yang butuh login/usia, isi `YTDLP_COOKIES_FILE` dengan file cookies format Netscape. Jika dependensi tidak siap, command memberi tahu dan `.doctor` melaporkannya.
 

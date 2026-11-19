@@ -9,6 +9,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const Database = require('better-sqlite3');
 const { AppError } = require('../errors');
+const { levelFromXp } = require('../../utils/economy');
 
 const MIGRATIONS = [
   {
@@ -97,6 +98,21 @@ const MIGRATIONS = [
         CREATE INDEX IF NOT EXISTS idx_users_banned ON users (is_banned);
         CREATE INDEX IF NOT EXISTS idx_groups_banned ON groups (is_banned);
         CREATE INDEX IF NOT EXISTS idx_stats_value ON stats (value DESC);
+      `);
+    },
+  },
+  {
+    name: 'economy',
+    up(db) {
+      db.exec(`
+        ALTER TABLE users ADD COLUMN balance INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE users ADD COLUMN xp INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE users ADD COLUMN level INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE users ADD COLUMN last_daily INTEGER;
+        ALTER TABLE users ADD COLUMN last_xp_at INTEGER;
+
+        CREATE INDEX IF NOT EXISTS idx_users_balance ON users (balance DESC);
+        CREATE INDEX IF NOT EXISTS idx_users_level ON users (level DESC, xp DESC);
       `);
     },
   },
@@ -255,6 +271,37 @@ function createSqliteDatabase({ filename = ':memory:', logger, now = Date.now } 
     userBanned: db.prepare('SELECT is_banned FROM users WHERE jid = ?'),
     incrementUserCommands: db.prepare(`
       UPDATE users SET command_count = command_count + 1, updated_at = ? WHERE jid = ?
+    `),
+
+    addBalance: db.prepare(`
+      UPDATE users SET balance = balance + ?, updated_at = ? WHERE jid = ?
+    `),
+    addXp: db.prepare(`
+      UPDATE users SET xp = xp + ?, level = ?, updated_at = ? WHERE jid = ?
+    `),
+    claimDaily: db.prepare(`
+      UPDATE users
+      SET balance = balance + ?, xp = ?, level = ?, last_daily = ?, updated_at = ?
+      WHERE jid = ?
+    `),
+    setPassiveXp: db.prepare(`
+      UPDATE users
+      SET xp = ?, level = ?, last_xp_at = ?, updated_at = ?
+      WHERE jid = ?
+    `),
+    topByBalance: db.prepare(`
+      SELECT jid, name, balance, xp, level FROM users
+      ORDER BY balance DESC, xp DESC, jid ASC LIMIT ?
+    `),
+    topByLevel: db.prepare(`
+      SELECT jid, name, balance, xp, level FROM users
+      ORDER BY level DESC, xp DESC, balance DESC, jid ASC LIMIT ?
+    `),
+    rankByBalance: db.prepare(`
+      SELECT COUNT(*) + 1 AS rank FROM users WHERE balance > ?
+    `),
+    rankByLevel: db.prepare(`
+      SELECT COUNT(*) + 1 AS rank FROM users WHERE level > ? OR (level = ? AND xp > ?)
     `),
 
     getGroup: db.prepare('SELECT * FROM groups WHERE jid = ?'),
@@ -593,6 +640,134 @@ function createSqliteDatabase({ filename = ':memory:', logger, now = Date.now } 
 
     incrementUserCommands(jid) {
       return statements.incrementUserCommands.run(now(), requireJid(jid)).changes > 0;
+    },
+
+    addBalance(jid, amount) {
+      const id = requireJid(jid);
+      const delta = Math.trunc(Number(amount));
+      if (!Number.isFinite(delta) || delta === 0) return database.getUser(id);
+      database.ensureUser(id);
+      statements.addBalance.run(delta, now(), id);
+      return database.getUser(id);
+    },
+
+    addXp(jid, amount) {
+      const id = requireJid(jid);
+      const user = database.ensureUser(id);
+      const delta = Math.max(0, Math.trunc(Number(amount)) || 0);
+      const fromLevel = Number(user.level) || 1;
+
+      if (delta === 0) {
+        return { user, gained: 0, fromLevel, toLevel: fromLevel, leveledUp: false };
+      }
+
+      const xp = (Number(user.xp) || 0) + delta;
+      const toLevel = Math.max(fromLevel, levelFromXp(xp));
+      statements.addXp.run(delta, toLevel, now(), id);
+
+      return {
+        user: database.getUser(id),
+        gained: delta,
+        fromLevel,
+        toLevel,
+        leveledUp: toLevel > fromLevel,
+      };
+    },
+
+    claimDaily(jid, { coins = 0, xp = 0, cooldownMs = 24 * 60 * 60 * 1000 } = {}) {
+      const id = requireJid(jid);
+      const user = database.ensureUser(id);
+      const last = Number(user.last_daily) || 0;
+      const elapsed = now() - last;
+
+      if (last > 0 && elapsed < cooldownMs) {
+        return {
+          ok: false,
+          remainingMs: cooldownMs - elapsed,
+          user,
+          fromLevel: Number(user.level) || 1,
+          toLevel: Number(user.level) || 1,
+          leveledUp: false,
+        };
+      }
+
+      const coinAmount = Math.max(0, Math.trunc(Number(coins)) || 0);
+      const xpAmount = Math.max(0, Math.trunc(Number(xp)) || 0);
+      const fromLevel = Number(user.level) || 1;
+      const newXp = (Number(user.xp) || 0) + xpAmount;
+      const toLevel = Math.max(fromLevel, levelFromXp(newXp));
+
+      statements.claimDaily.run(coinAmount, newXp, toLevel, now(), now(), id);
+
+      return {
+        ok: true,
+        coins: coinAmount,
+        xp: xpAmount,
+        remainingMs: cooldownMs,
+        user: database.getUser(id),
+        fromLevel,
+        toLevel,
+        leveledUp: toLevel > fromLevel,
+      };
+    },
+
+    grantPassiveXp(jid, {
+      min = 10,
+      max = 20,
+      cooldownMs = 45_000,
+      random = Math.random,
+    } = {}) {
+      const id = requireJid(jid);
+      const user = database.ensureUser(id);
+      const elapsed = now() - (Number(user.last_xp_at) || 0);
+
+      if (elapsed < cooldownMs) {
+        return { granted: false, remainingMs: cooldownMs - elapsed, user, amount: 0 };
+      }
+
+      const low = Math.max(1, Math.trunc(Number(min)) || 1);
+      const high = Math.max(low, Math.trunc(Number(max)) || low);
+      const roll = Math.min(0.999999, Math.max(0, Number(random()) || 0));
+      const amount = low + Math.floor(roll * (high - low + 1));
+
+      const fromLevel = Number(user.level) || 1;
+      const newXp = (Number(user.xp) || 0) + amount;
+      const toLevel = Math.max(fromLevel, levelFromXp(newXp));
+      statements.setPassiveXp.run(newXp, toLevel, now(), now(), id);
+
+      return {
+        granted: true,
+        amount,
+        remainingMs: cooldownMs,
+        user: database.getUser(id),
+        fromLevel,
+        toLevel,
+        leveledUp: toLevel > fromLevel,
+      };
+    },
+
+    getLeaderboard({ by = 'balance', limit = 10 } = {}) {
+      const size = Math.max(1, Math.min(50, Math.trunc(Number(limit)) || 10));
+      const statement = by === 'level' ? statements.topByLevel : statements.topByBalance;
+
+      return statement.all(size).map((row) => ({
+        jid: row.jid,
+        name: row.name,
+        balance: Number(row.balance) || 0,
+        xp: Number(row.xp) || 0,
+        level: Number(row.level) || 1,
+      }));
+    },
+
+    getRank(jid, by = 'balance') {
+      const user = database.getUser(requireJid(jid));
+      if (!user) return 0;
+
+      const row = by === 'level'
+        ? statements.rankByLevel.get(user.level, user.level, user.xp)
+        : statements.rankByBalance.get(user.balance);
+
+      return Number(row?.rank) || 0;
     },
 
     getGroup(jid) {

@@ -26,6 +26,11 @@ const {
 } = require('../utils/text');
 const { getContextInfo } = require('../utils/group');
 const { isChatbotEnabled } = require('../utils/chatbot');
+const {
+  PASSIVE_XP_MIN,
+  PASSIVE_XP_MAX,
+  PASSIVE_XP_COOLDOWN_MS,
+} = require('../utils/economy');
 
 const SKIP_SUFFIXES = ['@broadcast', '@newsletter'];
 const SEEN_LIMIT = 1_000;
@@ -446,6 +451,18 @@ function createMessageHandler({
           'Guard grup gagal mengevaluasi pesan',
         );
       }
+    }
+
+    // XP pasif untuk pesan valid; cooldown internal mencegah spam.
+    try {
+      const senderId = collectSenderIds(msg, chatId)[0] || chatId;
+      db.grantPassiveXp?.(senderId, {
+        min: PASSIVE_XP_MIN,
+        max: PASSIVE_XP_MAX,
+        cooldownMs: PASSIVE_XP_COOLDOWN_MS,
+      });
+    } catch (error) {
+      logger.warn?.({ err: error, chat: maskJid(chatId) }, 'Gagal memberi XP pasif');
     }
 
     const parsed = parseCommand(text, config.prefixes);

@@ -28,6 +28,7 @@ function makeCtx(media, overrides = {}) {
     async send(payload, options) {
       sent.push({ payload, options });
     },
+    async react() {},
     sent,
     ...overrides,
   };

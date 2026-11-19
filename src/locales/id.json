@@ -178,6 +178,39 @@
     },
     "chatbot": {
       "description": "Aktifkan/nonaktifkan balasan otomatis AI di chat ini"
+    },
+    "ig": {
+      "description": "Unduh Reels/Post/Video Instagram"
+    },
+    "fb": {
+      "description": "Unduh Video/Reels Facebook"
+    },
+    "x": {
+      "description": "Unduh video X (Twitter)"
+    },
+    "threads": {
+      "description": "Unduh video/media Threads"
+    },
+    "pinterest": {
+      "description": "Unduh video/gambar Pinterest"
+    },
+    "spotify": {
+      "description": "Unduh audio Spotify (MP3)"
+    },
+    "soundcloud": {
+      "description": "Unduh audio SoundCloud (MP3)"
+    },
+    "daily": {
+      "description": "Klaim hadiah koin dan XP harian"
+    },
+    "balance": {
+      "description": "Cek koin, XP, dan level"
+    },
+    "level": {
+      "description": "Lihat level, progress XP, dan peringkat"
+    },
+    "leaderboard": {
+      "description": "Tampilkan top 10 user berdasarkan koin atau level"
     }
   },
   "ai": {
@@ -403,6 +436,7 @@
     "ageRestricted": "Video ini dibatasi usia dan tidak bisa diunduh tanpa cookies.",
     "unavailableMedia": "Media tidak tersedia. Mungkin video privat, dihapus, atau dibatasi wilayah.",
     "formatUnavailable": "Format media yang diminta tidak tersedia. Coba lagi atau gunakan link lain.",
+    "invalidResolution": "Format resolusi tidak sesuai",
     "timeout": "Unduhan melebihi batas waktu. Coba video yang lebih pendek atau ulangi nanti.",
     "unsupportedMedia": "Konten ini bukan video/audio yang didukung (misalnya slideshow foto TikTok).",
     "processing": "⏳ Memproses media...",
@@ -493,6 +527,32 @@
     "tmpOk": "{count} file ({size})",
     "uptime": "Uptime",
     "memory": "Memori"
+  },
+  "economy": {
+    "daily": {
+      "claimed": "🎁 Klaim harian berhasil! +{coins} koin, +{xp} XP.",
+      "wait": "⏳ Hadiah harian sudah diklaim. Coba lagi dalam *{time}*."
+    },
+    "balance": {
+      "title": "💰 *Saldo {user}*",
+      "line": "Koin: *{balance}*\nXP: *{xp}*\nLevel: *{level}*"
+    },
+    "level": {
+      "title": "📊 *Level {user}*",
+      "current": "Level: *{level}*",
+      "progress": "{bar} {percent}%\nXP: {current}/{needed}",
+      "total": "Total XP: *{xp}*",
+      "rank": "Peringkat: *#{rank}*"
+    },
+    "leaderboard": {
+      "titleBalance": "🏆 *Top 10 Koin*",
+      "titleLevel": "🏆 *Top 10 Level*",
+      "empty": "Belum ada data leaderboard.",
+      "item": "{rank}. {user} — {value}",
+      "balanceValue": "{balance} koin",
+      "levelValue": "Lv {level} ({xp} XP)"
+    },
+    "levelUp": "🎉 Level naik ke *{level}*!"
   },
   "groupEvents": {
     "welcomeDefault": "👋 Selamat datang {mention} di *{group}*!",
