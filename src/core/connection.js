@@ -14,6 +14,9 @@ const {
 } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 const { maskJid } = require('../utils/jid');
+const { join } = require('node:path');
+const { createAutomation } = require('./automation');
+const { createTranslator } = require('./i18n');
 
 const FATAL_STATUS_CODES = new Set([
   DisconnectReason.loggedOut,
@@ -60,6 +63,8 @@ function createConnection({
   let authPromise = null;
   let versionPromise = null;
   let pairingFailed = false;
+  const automation = createAutomation(Date.now, config.authDir && join(config.authDir, 'broadcast-quota.json'));
+  const t = createTranslator(config.defaultLang);
 
   function getAuthState() {
     if (!authPromise) authPromise = useMultiFileAuthState(config.authDir);
@@ -143,6 +148,7 @@ function createConnection({
     if (connection !== 'close') return;
 
     status = 'closed';
+    automation.disconnect(socket);
     const statusCode = lastDisconnect?.error?.output?.statusCode
       ?? lastDisconnect?.error?.statusCode
       ?? DisconnectReason.connectionClosed;
@@ -161,6 +167,7 @@ function createConnection({
         'Session tidak bisa dilanjutkan. Hapus folder AUTH_DIR lalu pairing ulang.',
       );
       stopping = true;
+      automation.dispose();
       onFatal?.(new Error(`Koneksi dihentikan permanen (status ${statusCode})`));
       return;
     }
@@ -218,6 +225,7 @@ function createConnection({
       getAuthState(),
       getVersion(),
     ]);
+    if (stopping) return null;
 
     const socket = makeWASocket({
       auth,
@@ -248,6 +256,14 @@ function createConnection({
     });
 
     sock = socket;
+    automation.attach(socket);
+
+    socket.ev.on('call', (calls) => {
+      if (socket !== sock || stopping || !Array.isArray(calls)) return;
+      automation.rejectCalls(socket, calls, t('automation.callRejected')).catch((error) => {
+        logger.warn({ err: error }, 'Gagal menangani panggilan masuk');
+      });
+    });
 
     socket.ev.on('creds.update', saveCreds);
 
@@ -258,6 +274,7 @@ function createConnection({
     });
 
     socket.ev.on('messages.upsert', (event) => {
+      if (socket !== sock || stopping) return;
       // Simpan pesan masuk agar event/poll dan retry bisa menemukannya.
       if (event?.type === 'notify') {
         for (const incoming of event.messages || []) {
@@ -297,6 +314,7 @@ function createConnection({
   async function stop() {
     stopping = true;
     clearTimers();
+    automation.dispose();
 
     const current = sock;
     sock = null;

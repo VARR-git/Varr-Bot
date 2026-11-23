@@ -2,10 +2,11 @@
  * Handler pesan WhatsApp → pipeline command.
  *
  * Hanya memproses `messages.upsert` bertipe `notify`, mengabaikan pesan sendiri,
- * status, broadcast, newsletter, reaksi, dan pesan sistem.
+ * broadcast, newsletter, reaksi, dan pesan sistem. Status diproses secara opt-in.
  */
 
 const { createTranslator } = require('./i18n');
+const { automationFor } = require('./automation');
 const { compose } = require('./middleware');
 const { createChatQueue } = require('./queue');
 const { AppError, withTimeout } = require('./errors');
@@ -439,20 +440,53 @@ function createMessageHandler({
   async function handleMessage(sock, msg) {
     const chatId = msg?.key?.remoteJid;
     if (!chatId || msg.key.fromMe || !msg.message) return;
-    if (shouldSkipJid(chatId)) return;
+    const status = isStatusJid(chatId);
+    if (!status && shouldSkipJid(chatId)) return;
     if (markSeen(msg.key.id)) return;
 
     const content = unwrapMessage(msg.message);
     if (!content) return;
-    if (content.reactionMessage || content.protocolMessage || content.pollUpdateMessage) return;
+    const automation = automationFor(sock);
+    if (status) {
+      const author = msg.key.participant;
+      if (!author || !msg.key.id || content.protocolMessage || content.reactionMessage) return;
+      if (automation.enabled('save') && (content.imageMessage || content.videoMessage || content.audioMessage)) {
+        automation.remember(msg, content);
+      }
+      if (automation.enabled('autostatus')) await sock.readMessages([msg.key]);
+      if (automation.enabled('statusreact')) {
+        await sock.sendMessage(chatId, { react: { text: '❤️', key: msg.key } }, {
+          statusJidList: [author, normalizeJid(sock.user?.id)].filter(Boolean),
+        });
+      }
+      return;
+    }
+
+    const recover = isGroupJid(chatId)
+      ? db.getGroupSetting?.(normalizeJid(chatId), 'antidelete', false) === true
+      : automation.enabled('antidelete') && buildContext(sock, msg).isOwner;
+    if (content.protocolMessage) {
+      if (recover) await automation.restore(sock, msg, content.protocolMessage, translator);
+      return;
+    }
+    if (content.reactionMessage || content.pollUpdateMessage) return;
+    if (automation.enabled('autoread') && msg.key.id) {
+      try {
+        await sock.readMessages([msg.key]);
+      } catch (error) {
+        logger.debug?.({ err: error }, 'Gagal menandai pesan dibaca');
+      }
+    }
 
     const text = extractText(content);
-    if (!text) return;
 
-    // Guard grup berjalan sebelum parsing command agar pesan biasa juga dijaga.
-    if (services.guard) {
+    // Mention tanpa caption tetap perlu diperiksa.
+    const context = getContextInfo(content);
+    if (services.guard && (text || context?.mentionedJid?.length)) {
       try {
-        const handled = await services.guard.enforce(sock, msg, { chatId, text });
+        const handled = await services.guard.enforce(sock, msg, {
+          chatId, text: text || '', mentions: context?.mentionedJid,
+        });
         if (handled) {
           try {
             db.incrementStat('guard:handled');
@@ -468,6 +502,8 @@ function createMessageHandler({
         );
       }
     }
+    if (recover) automation.remember(msg, content);
+    if (!text) return;
 
     // XP pasif untuk pesan valid; cooldown internal mencegah spam.
     try {

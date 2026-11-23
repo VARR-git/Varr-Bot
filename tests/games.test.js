@@ -38,7 +38,7 @@ async function input(gm, chatId, senderId, text, senderName) {
   const consumed = await gm.handleInput({
     chatId,
     senderId,
-    senderName: senderName || senderId.split('@')[0],
+    senderName,
     text,
     reply: async (message) => { replies.push(String(message)); },
   });
@@ -167,22 +167,27 @@ test('nama pengirim dipakai di pesan game, bukan ID', async () => {
   const gm = createGameManager();
   const db = makeDb();
 
-  const startTtt = makeCtx({ chatId: 'n1@g.us', senderId: A, gm, db });
+  const opponent = '249580935475411@lid';
+  db.getUser = (jid) => jid === opponent ? { name: 'Siti' } : null;
+  const startTtt = makeCtx({ chatId: 'n1@g.us', senderId: A, args: ['@249580935475411'], gm, db });
   startTtt.ctx.senderName = 'Budi';
+  startTtt.ctx.msg.message = { extendedTextMessage: { contextInfo: { mentionedJid: [opponent] } } };
   await ttt.execute(startTtt.ctx);
   assert.match(startTtt.replies[0], /Budi/);
   assert.doesNotMatch(startTtt.replies[0], /628111111111/);
+  const turn = await input(gm, 'n1@g.us', A, '1');
+  assert.match(turn.replies[0], /"player":"Siti"/);
+  assert.doesNotMatch(turn.replies[0], /249580935475411/);
 
   const originalRandom = Math.random;
   Math.random = () => 0;
   const startTrivia = makeCtx({ chatId: 'n2@g.us', senderId: A, gm, db });
-  startTrivia.ctx.senderName = 'Siti';
   await trivia.execute(startTrivia.ctx);
   Math.random = originalRandom;
 
-  const result = await input(gm, 'n2@g.us', A, 'A', 'Siti');
-  assert.match(result.replies.at(-1), /Siti/);
-  assert.doesNotMatch(result.replies.at(-1), /628111111111/);
+  const result = await input(gm, 'n2@g.us', opponent, 'A');
+  assert.match(result.replies.at(-1), /"player":"Siti"/);
+  assert.doesNotMatch(result.replies.at(-1), /249580935475411/);
 
   gm.dispose();
 });

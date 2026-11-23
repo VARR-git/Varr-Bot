@@ -2,7 +2,7 @@
 
 Bot WhatsApp modular berbasis [Baileys](https://github.com/WhiskeySockets/Baileys) untuk kebutuhan grup, produktivitas, media, AI, dan otomasi. Varr-Bot dirancang agar mudah dirawat, aman dipakai, dan gampang ditambah fitur baru lewat sistem plugin.
 
-> **Status:** Fondasi Phase 1–2 selesai. Source saat ini juga sudah memuat AI multi-provider, media suite, downloader multi-platform, dan economy (55 command).
+> **Status:** Fondasi Phase 1–2 selesai. Source juga memuat AI multi-provider, media suite, downloader multi-platform, economy, serta automation dan guard tambahan dari Phase 4 Bagian 3.
 
 ## Kenapa Varr-Bot?
 
@@ -31,7 +31,7 @@ Ringkasan kategori (detail lengkap ada di [docs/FEATURES.md](docs/FEATURES.md)).
 |---|---|---|
 | Core & UX | Menu per kategori, help, ping, multi-bahasa, prefix fleksibel | ✅ |
 | Manajemen grup | Welcome/goodbye, promote/demote, kick, mute, tagall, hidetag, group info, warning | ✅ |
-| Varr Guard | Anti-link, anti-spam, batas warning, eskalasi warning → kick, guard status | ✅ |
+| Varr Guard | Anti-link, anti-spam, anti-badword, anti-tagall, anti-delete, anti-call, eskalasi warning → kick | ✅ |
 | Sticker & media | Sticker maker, sticker → gambar, MP3, PDF, QR, baca QR | ✅ |
 | Downloader | YouTube MP3/MP4, TikTok, Instagram, Facebook, X, Threads, Pinterest, Spotify, SoundCloud | ✅ |
 | Owner & system | Ban/unban, mode, maintenance, stats, backup & restore, Varr Doctor | ✅ |
@@ -39,7 +39,7 @@ Ringkasan kategori (detail lengkap ada di [docs/FEATURES.md](docs/FEATURES.md)).
 | Economy | Daily reward, balance, level, leaderboard | ✅ |
 | AI vision & games | Vision, RPG, mini games | ⏳ Phase 4 |
 | Utility lain | Cuaca, berita, Wikipedia, lyrics, kalkulator | ⏳ Phase 4 |
-| Automation | Reminder, scheduler, broadcast, auto-reply | ⏳ Phase 4 |
+| Automation & status | Reminder, polling, broadcast, auto-read, auto-status, reaksi dan simpan status | ✅ |
 | Scale (lanjutan) | Jadibot multi-session, REST API, web dashboard | ⏳ Phase 5 |
 
 Beberapa fitur pembeda yang sudah ada atau akan ditambahkan:
@@ -93,7 +93,16 @@ Beberapa fitur pembeda yang sudah ada atau akan ditambahkan:
 | `.setwarnlimit <1-10>` | Batas warning sebelum anggota dikeluarkan |
 | `.guardstatus` | Ringkasan aturan guard aktif |
 
-Admin grup dan owner selalu dikecualikan dari guard. Eskalasi: warning → keluarkan saat batas tercapai (WhatsApp tidak punya mute per anggota; lihat ADR-009).
+Admin grup dan owner dikecualikan dari moderasi pesan grup. Eskalasi: warning → keluarkan saat batas tercapai (WhatsApp tidak punya mute per anggota; lihat ADR-009). Untuk `.antibadword`, `.antitagall`, `.antidelete`, dan `.anticall`, lihat [guard tambahan](docs/FEATURES.md#4-varr-guard-).
+
+### Automation & status
+
+- `.remind 10m minum air` — pengingat di chat yang sama, maksimal 24 jam; tidak bertahan setelah restart.
+- `.poll Makan siang? | Soto | Bakso` — polling WhatsApp dengan 2–12 opsi unik dan satu pilihan per pemilih.
+- `.broadcast` / `.bc` — khusus owner. Atur `BROADCAST_TARGETS` di `.env` dengan JID penerima yang sudah setuju, dipisahkan koma. Gunakan `.bc on`, lalu `.bc <pesan>`. Jeda antar chat 2–4 detik, maksimal 20 percobaan per hari UTC. `.bc off` menghentikan pengiriman berikutnya.
+- Owner dapat menyalakan `.autoread`, `.autostatus`, dan `.statusreact` dengan `on` atau mematikannya dengan `off`. Untuk mengunduh media status, aktifkan `.save on` lalu balas media status yang masuk setelah aktivasi dengan `.save` di chat pribadi owner.
+
+Lihat [batasan automation dan status](docs/FEATURES.md#10-automation) sebelum mengaktifkannya.
 
 ### Media & downloader
 
@@ -216,7 +225,7 @@ Untuk Pterodactyl, baca [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Arsitektur & Alur
 
-Bagian ini adalah peta cara kerja Varr-Bot dari proses start sampai pesan dibalas. Diagram mengikuti kode di `src/`; registry saat ini memuat 55 command.
+Bagian ini adalah peta cara kerja Varr-Bot dari proses start sampai pesan dibalas. Diagram mengikuti kode di `src/`.
 
 Urutan baca yang disarankan: **siklus hidup (2) → pesan masuk (3) → pipeline middleware (4)**, lalu guard/event grup (5), alur layanan (6), dan data (7).
 

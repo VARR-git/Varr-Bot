@@ -6,7 +6,7 @@
  */
 
 const { normalizeJid } = require('../../utils/jid');
-const { unwrapMessage } = require('../../utils/text');
+const { sanitizeName, unwrapMessage } = require('../../utils/text');
 const { getContextInfo } = require('../../utils/group');
 const { getDefaultGameManager, REWARDS } = require('../../services/gameManager');
 
@@ -18,11 +18,6 @@ const LINES = [
   [0, 3, 6], [1, 4, 7], [2, 5, 8],
   [0, 4, 8], [2, 4, 6],
 ];
-
-function label(jid) {
-  if (!jid || jid === BOT) return 'Bot';
-  return String(jid).split('@')[0];
-}
 
 function render(board) {
   const rows = [];
@@ -57,18 +52,16 @@ function pickBotMove(board) {
 }
 
 function resolveTarget(ctx) {
-  const fromArgs = String(ctx.rawArgs || '').match(/@?(\d{6,})/);
-  if (fromArgs) return `${fromArgs[1]}@s.whatsapp.net`;
-
   try {
     const content = unwrapMessage(ctx.msg?.message);
     const info = getContextInfo(content || {});
     if (info?.mentionedJid?.length) return normalizeJid(info.mentionedJid[0]);
     if (info?.participant) return normalizeJid(info.participant);
   } catch {
-    // Tanpa metadata mention, game tetap bisa dimulai melawan bot.
+    // Coba nomor dari argumen jika metadata tidak bisa dibaca.
   }
-  return null;
+  const fromArgs = String(ctx.rawArgs || '').match(/@?(\d{6,})/);
+  return fromArgs ? `${fromArgs[1]}@s.whatsapp.net` : null;
 }
 
 module.exports = {
@@ -107,11 +100,10 @@ module.exports = {
     const target = resolveTarget(ctx);
     const opponent = target && target !== starter ? target : null;
     const players = [starter, opponent || BOT];
-    const names = new Map([[starter, ctx.senderName || label(starter)]]);
-    if (opponent) names.set(opponent, label(opponent));
+    const names = new Map([[starter, ctx.senderName]]);
 
     function display(jid) {
-      return names.get(jid) || label(jid);
+      return jid === BOT ? 'Bot' : sanitizeName(names.get(jid) || ctx.db?.getUser?.(jid)?.name);
     }
 
     const board = Array(9).fill('');

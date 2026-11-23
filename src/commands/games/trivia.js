@@ -103,7 +103,7 @@ module.exports = {
           answer: LETTERS[question.answer],
           coins: REWARDS.trivia.win,
           xp: REWARDS.trivia.xp,
-          player: senderName || String(senderId || '').split('@')[0],
+          player: senderName || 'Kak',
         }));
         api.finish();
       },

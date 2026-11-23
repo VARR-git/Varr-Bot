@@ -6,6 +6,8 @@
  * selama `defaultTimeoutMs` sesi dihapus otomatis.
  */
 
+const { sanitizeName } = require('../utils/text');
+
 const DEFAULT_TIMEOUT_MS = 75_000;
 
 const REWARDS = {
@@ -104,6 +106,9 @@ function createGameManager({ defaultTimeoutMs = DEFAULT_TIMEOUT_MS, logger } = {
   async function handleInput({ chatId, senderId, senderName, text, reply }) {
     const session = sessions.get(chatId);
     if (!session || !accepts(chatId, text)) return false;
+
+    const name = senderName || session.db?.getUser?.(senderId)?.name;
+    senderName = name ? sanitizeName(name) : undefined;
 
     const input = String(text).trim();
     if (SURRENDER_RE.test(input)) {

@@ -9,12 +9,12 @@ Dokumen ini adalah **blueprint fitur**. Prioritas ditentukan agar pengembangan t
 | Phase 1 | ✅ | Fondasi: config, logger, registry, middleware, SQLite, QR/pairing, command dasar |
 | Phase 2 | ✅ | Grup, guard, media dasar, downloader (yt/tiktok), backup/restore, ban, stats, doctor |
 | Phase 3 | ⏳ | AI multi-provider, memory, media lanjutan, downloader tambahan |
-| Phase 4 | ⏳ | Economy, games, automation, guard tambahan |
+| Phase 4 | Sebagian ✅ | Economy, mini games, automation/status dan guard tambahan (Bagian 3); fitur lain masih direncanakan |
 | Phase 5 | ⏳ | Jadibot, REST API, dashboard, plugin store |
 
 Yang **sudah** tersedia: `.menu`, `.help`, `.ping`, `.alive`, `.owner`, `.mode`, `.maintenance`, `.welcome`, `.goodbye`, `.promote`, `.demote`, `.kick`, `.mute`, `.unmute`, `.tagall`, `.hidetag`, `.groupinfo`, `.warn`, `.warnings`, `.unwarn`, `.antilink`, `.antispam`, `.setwarnlimit`, `.guardstatus`, `.sticker`, `.toimg`, `.ytmp3`, `.ytmp4`, `.tiktok`, `.ban`, `.unban`, `.stats`, `.backup`, `.restore`, `.doctor`.
 
-Yang belum: kategori AI, utility/search, economy & games, automation, dan downloader tambahan (IG/FB/X/Threads/Pinterest/Spotify). Item berprioritas P0/P1 lain di bawah tetap menjadi target fase berikutnya.
+Phase 4 Bagian 3 menambahkan automation, status, dan guard berikut. Tabel di bawah juga memuat rencana; catatan implementasi membedakan fitur yang sudah tersedia dari rencana.
 
 ## Legenda Prioritas
 
@@ -111,26 +111,20 @@ Suite moderasi dengan **severity engine**, bukan sekadar tombol on/off.
 |---|---|---|
 | `.antilink on/off` | Deteksi link; whitelist domain resmi | P0 |
 | `.antispam on/off` | Deteksi flood, pesan duplikat, mention berlebihan | P0 |
-| `.antibadword on/off` | Filter kata kasar dengan daftar yang bisa dikustomisasi | P1 |
-| `.antitagall on/off` | Cegah tag semua anggota | P1 |
+| `.antibadword on/off`, `add <kata>`, `remove <kata>`, `list` | Hapus pesan yang memuat kata terlarang dan tambah warning; daftar maksimal 100 kata per grup | P1 |
+| `.antitagall on/off` | Hapus pesan dengan lebih dari 5 mention unik | P1 |
 | `.antibot on/off` | Deteksi pesan yang mirip bot lain | P2 |
-| `.anticall on/off` | Tolak panggilan dengan pesan sopan | P2 |
-| `.antidelete on/off` | Tampilkan pesan yang dihapus (opt-in, TTL) | P1 |
+| `.anticall on/off` | Khusus owner; tolak tawaran panggilan pribadi dan kirim peringatan sopan | P2 |
+| `.antidelete on/off` | Opt-in per grup atau di chat pribadi owner; pulihkan pesan yang ditarik pengirim ke chat yang sama | P1 |
 | `.antiviewonce on/off` | Simpan view-once (opt-in, TTL) | P2 |
 | `.setwarnlimit <n>` | Jumlah warning sebelum aksi otomatis | P0 |
 | `.whitelist` / `.blacklist` | Kelola domain, nomor, atau kata | P1 |
 | `.guardstatus` | Ringkasan aturan aktif di grup | P0 |
 | `.guardlog` | Audit aksi moderasi terakhir | P1 |
 
-**Alur eskalasi default:**
+**Implementasi Bagian 3:** Keempat guard tambahan nonaktif secara default. Antibadword mencocokkan kata utuh tanpa membedakan kapitalisasi; warning dapat berujung kick sesuai batas grup. Antibadword dan antitagall mengecualikan admin/owner dan memerlukan bot sebagai admin untuk menghapus pesan. Toggle anticall direset saat proses dimulai ulang.
 
-```text
-pelanggaran ringan → warning
-pelanggaran berulang → mute sementara (5–30 menit)
-pelanggaran berat → kick
-```
-
-Semua aksi dapat dikonfigurasi per grup. Admin dan owner selalu dikecualikan (dengan audit log).
+Antidelete menyimpan teks, gambar, video, dan audio biasa dalam cache memori selama maksimal 15 menit; pesan view-once dan pesan sementara tidak dipulihkan. Hanya penarikan oleh pengirim asli yang dipulihkan, dengan identitas pengirim disertakan. Beri tahu anggota sebelum mengaktifkannya.
 
 ---
 
@@ -285,24 +279,28 @@ Ekonomi dan game memakai data yang sama dengan level/XP, tetapi dapat dimatikan 
 
 | Command | Fungsi | Prioritas |
 |---|---|---|
-| `.remind <waktu> <pesan>` | Reminder | P1 |
+| `.remind <waktu> <pesan>` | Pengingat di chat yang sama; format `30s`, `10m`, `1h`, maksimal 24 jam | P1 |
 | `.schedule` | Pesan terjadwal | P2 |
-| `.broadcast` | Broadcast ke user/grup dengan rate limit | P1 |
+| `.broadcast <pesan>` / `.bc <pesan>` | Khusus owner; kirim pengumuman ke chat terdaftar | P1 |
 | `.autoreply` | Aturan balasan otomatis | P2 |
 | `.autosticker` | Gambar otomatis jadi sticker | P2 |
-| `.autoread` | Tandai semua pesan dibaca | P1 |
+| `.autoread on/off` | Khusus owner; tandai pesan masuk sebagai dibaca | P1 |
 | `.autotyping` | Indikator mengetik | P2 |
-| `.autostatus` | Lihat status otomatis | P2 |
-| `.statusreact` | Reaksi otomatis ke status | P2 |
+| `.autostatus on/off` | Khusus owner; tandai status masuk sebagai dilihat | P2 |
+| `.statusreact on/off` | Khusus owner; beri reaksi ❤️ pada status masuk | P2 |
 | `.autoreact` | Reaksi otomatis ke pesan tertentu | P2 |
-| `.poll` | Buat poll | P1 |
+| `.poll <pertanyaan> \| <opsi 1> \| <opsi 2>` | Polling WhatsApp; 2–12 opsi unik, satu pilihan per pemilih | P1 |
 | `.rss <url>` | Pantau RSS | P2 |
 | `.digest` | Ringkasan berkala | P2 |
 | `.filter` | Filter kata/auto-response | P2 |
 | `.autoforward` | Forward otomatis (dengan allowlist) | P2 |
-| `.save` | Simpan status yang di-reply | P2 |
+| `.save on/off`, `.save` | Khusus owner; salin media status yang di-reply ke chat pribadi owner | P2 |
 
-**Batasan:** broadcast dan auto-forward hanya untuk owner/admin, dengan kuota harian dan jeda acak agar tidak dianggap spam.
+**Implementasi Bagian 3:** Reminder dan poll sudah tersedia. Broadcast dan toggle status nonaktif secara default dan direset saat proses dimulai ulang. Reminder disimpan di memori dan dibatalkan saat shutdown. Scheduler umum dan auto-forward masih rencana.
+
+**Broadcast:** Tambahkan `BROADCAST_TARGETS=628123456789@s.whatsapp.net,120363000000000000@g.us` ke `.env`, ganti dengan JID chat yang setuju menerima pengumuman, lalu mulai ulang bot. Jalankan `.bc on` sebelum mengirim. Jeda antar penerima 2–4 detik dan kuota 20 percobaan per hari UTC, termasuk pengiriman gagal. Kuota disimpan di direktori sesi. `.bc off` menghentikan sisa batch, bukan kiriman yang sudah berjalan. Batas ini bukan jaminan akun bebas dari pembatasan WhatsApp.
+
+**Simpan status:** Di chat pribadi owner, aktifkan `.save on`, lalu balas media status yang masuk setelah aktivasi dengan `.save` selama masih ada di cache (maksimal 15 menit). Gambar, video, dan audio dibatasi 16 MB. Salinan dikirim ke chat pribadi, bukan ditulis sebagai file lokal.
 
 ---
 

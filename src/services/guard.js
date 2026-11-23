@@ -34,6 +34,14 @@ const SPAM_MAX_MESSAGES = 6;
 const REPEAT_WINDOW_MS = 10_000;
 const REPEAT_MAX = 3;
 
+function extraViolation(text, mentions, words, tagEnabled) {
+  const tokens = new Set(text.normalize('NFKC').toLowerCase().match(/[\p{L}\p{N}\p{M}]+/gu));
+  if (Array.isArray(words) && words.some((word) => tokens.has(word))) return 'badword';
+  if (tagEnabled && new Set((Array.isArray(mentions) ? mentions : []).map(normalizeJid).filter(Boolean)).size > 5) {
+    return 'tagall';
+  }
+}
+
 /**
  * @param {unknown} value
  * @returns {'delete'|'warn'|'kick'}
@@ -128,12 +136,14 @@ function createGuardService({
    * @param {string} options.text
    * @returns {Promise<boolean>} true bila pesan sudah ditangani guard
    */
-  async function enforce(sock, msg, { chatId, text }) {
+  async function enforce(sock, msg, { chatId, text, mentions }) {
     if (!isGroupJid(chatId)) return false;
 
     const linkEnabled = Boolean(db.getGroupSetting(chatId, 'antilink', false));
     const spamEnabled = Boolean(db.getGroupSetting(chatId, 'antispam', false));
-    if (!linkEnabled && !spamEnabled) return false;
+    const badwordEnabled = db.getGroupSetting(chatId, 'antibadword', false);
+    const tagEnabled = db.getGroupSetting(chatId, 'antitagall', false);
+    if (!linkEnabled && !spamEnabled && !badwordEnabled && !tagEnabled) return false;
 
     let metadata;
     try {
@@ -158,12 +168,14 @@ function createGuardService({
     if (config.ownerNumbers.some((number) => senderNumbers.has(number))) return false;
 
     const linkViolation = linkEnabled && LINK_PATTERN.test(text);
-    const spamViolation = spamEnabled && isSpam(chatId, senderIds[0], text);
-    if (!linkViolation && !spamViolation) return false;
+    const spamViolation = spamEnabled && text && isSpam(chatId, senderIds[0], text);
+    const extra = extraViolation(text, mentions,
+      badwordEnabled && db.getGroupSetting(chatId, 'antibadword_words', []), tagEnabled);
+    if (!linkViolation && !spamViolation && !extra) return false;
 
-    const kind = linkViolation ? 'link' : 'spam';
-    const actionKey = kind === 'link' ? 'antilink_action' : 'antispam_action';
-    const action = normalizeAction(db.getGroupSetting(chatId, actionKey, 'delete'));
+    const kind = linkViolation ? 'link' : spamViolation ? 'spam' : extra;
+    const action = kind === 'badword' ? 'warn' : kind === 'tagall' ? 'delete'
+      : normalizeAction(db.getGroupSetting(chatId, `anti${kind}_action`, 'delete'));
 
     // Tanpa hak admin, bot tidak bisa menghapus pesan orang lain.
     if (!isBotAdmin(metadata, sock)) {
@@ -225,7 +237,7 @@ function createGuardService({
         sock,
         chatId,
         target,
-        reason: kind === 'link' ? t('guard.reasonLink') : t('guard.reasonSpam'),
+        reason: t(kind === 'link' ? 'guard.reasonLink' : kind === 'spam' ? 'guard.reasonSpam' : 'automation.badwordReason'),
         warnedBy: 'guard',
         metadata,
       });
@@ -291,5 +303,6 @@ module.exports = {
   LINK_PATTERN,
   VALID_ACTIONS,
   normalizeAction,
+  extraViolation,
   createGuardService,
 };
